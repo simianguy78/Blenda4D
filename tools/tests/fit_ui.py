@@ -70,6 +70,6 @@ def finish():
 W = [lambda: None] * 6
 done = PLAN.pop()
 PLAN += W + [compare("built"), show("built"),
-             fullscreen] + W * 4 + [compare("fullscreen"), show("fullscreen"),
-             fullscreen] + W * 4 + [compare("back"), show("back"),
+             fullscreen] + W * 8 + [compare("fullscreen"), show("fullscreen"),
+             fullscreen] + W * 8 + [compare("back"), show("back"),
              finish, done, lambda: bpy.ops.wm.quit_blender()]
