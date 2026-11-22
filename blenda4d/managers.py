@@ -1312,9 +1312,32 @@ def _enabled_set(self, v):
     self.hide_render = not v
 
 
+_last_active = [None]
+
+
+@bpy.app.handlers.persistent
+def _object_page_on_select(*_args):
+    """Selecting another object puts the Attribute Manager on its Object page (the page stays as the user left it
+    while the same object stays selected)."""
+    try:
+        ob = bpy.context.view_layer.objects.active
+        name = ob.name_full if ob is not None else None
+        if name == _last_active[0]:
+            return
+        _last_active[0] = name
+        wm = bpy.context.window_manager
+        if ob is not None and wm.b4d_am_tab != "OBJECT":
+            wm.b4d_am_tab = "OBJECT"
+    except (AttributeError, RuntimeError, ReferenceError):
+        pass
+
+
 def register():
     for c in classes:
         bpy.utils.register_class(c)
+    _last_active[0] = None
+    if _object_page_on_select not in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.append(_object_page_on_select)
     O, W = bpy.types.Object, bpy.types.WindowManager
     vis = [("DEFAULT", "Default", "Shown as usual"), ("ON", "On", "Shown"), ("OFF", "Off", "Hidden")]
     O.b4d_om_closed = bpy.props.BoolProperty(description='Whether the objects under this one are folded away in the Object Manager', default=False)
@@ -1406,6 +1429,8 @@ def _add_keymap():
 
 
 def unregister():
+    if _object_page_on_select in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.remove(_object_page_on_select)
     for h in _draw:
         bpy.types.SpaceProperties.draw_handler_remove(h, "WINDOW")
     _draw.clear()
