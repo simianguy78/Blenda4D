@@ -233,6 +233,21 @@ def test_tabs(cube):
     check(res == {"FINISHED"} and wm.b4d_am_tab == "COORD", "a tab button shows its page")
 
 
+def test_object_page_on_select(cube):
+    """Selecting an object shows its Object page; the page the user picks stays while the object stays selected."""
+    wm = bpy.context.window_manager
+    bpy.ops.mesh.primitive_uv_sphere_add()
+    other = bpy.context.object
+    for ob in (cube, other, cube):
+        wm.b4d_am_tab = "BASIC"
+        bpy.context.view_layer.objects.active = ob
+        bpy.context.view_layer.update()
+        check(wm.b4d_am_tab == "OBJECT", f"selecting {ob.name} opens its Object page")
+        wm.b4d_am_tab = "COORD"
+        bpy.context.view_layer.update()
+        check(wm.b4d_am_tab == "COORD", f"{ob.name} stays on the page the user picked")
+
+
 def test_every_kind():
     """Every kind's every page draws, and every setting on it is a row."""
     for kind, k in sorted(kinds.KINDS.items()):
@@ -276,6 +291,7 @@ try:
         bpy.data.objects.remove(ob)
     cube = test_cube()
     test_tabs(cube)
+    test_object_page_on_select(cube)
     test_every_kind()
     switch._unregister_mode()
 except Exception:
