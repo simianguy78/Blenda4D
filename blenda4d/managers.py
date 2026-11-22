@@ -202,9 +202,9 @@ class BLENDA4D_OT_group(bpy.types.Operator):
 
 
 TOP_LEVEL = "\x00top"
-ROWS_TOP_APART = 0.35        # with the title, menus and tools in their own strip above (OM_HEAD)
-ROWS_TOP_UNITS = 4.40        # where the first object row starts, in row heights below the top of the panel area (measured
-#                               on Blender 5.2 and 5.3, Mac, Windows and Linux, at every Size: icon centres sit at 4.40 + i + 0.5)
+ROWS_TOP_APART = 0.35        # kept for layouts that still have a separate head strip
+ROWS_TOP_UNITS = 2.88        # where the first object row starts, in row heights below the top of the panel area (measured
+#                               on Blender 5.2, Windows, 2x, Size 0/50/100, one panel with the tab and menu row: icon centres sit at 2.88 + i + 0.5)
 STRIPE = (0.02, 0.02, 0.02, 1.0)      # added to every other Object Manager row: +5 grey levels, as in the original (Joseph, Nov 19)
 
 
@@ -228,7 +228,8 @@ def visible_rows(context):
 
 
 def head_apart(screen):
-    return any(roles.role(a) == "OM_HEAD" for a in screen.areas)
+    """The Object Manager's title, menus and tools are drawn at the top of its own panel (one panel, not two)."""
+    return False
 
 
 def rows_top(screen=None):
@@ -528,6 +529,29 @@ class BLENDA4D_PT_om_bar(roles.RolePanel, bpy.types.Panel):
         size_bar(row, "b4d_om_zoom", step=10)
 
 
+def _name_column(context, region, rows):
+    """(share, layout width): the share of an Object Manager row taken by the name and the dots and check next to it.
+    The tags go to its right, behind a separator."""
+    import blf
+    try:
+        v2d = region.view2d
+        zoom = (v2d.view_to_region(0, 0, clip=False)[1] - v2d.view_to_region(0, -1000, clip=False)[1]) / 1000
+    except (AttributeError, ZeroDivisionError):
+        zoom = 1.0
+    width = region.width / max(zoom, 0.01)
+    h = row_height()
+    style = context.preferences.ui_styles[0].widget
+    blf.size(0, style.points * context.preferences.system.ui_scale)
+    widest = max((h * (2.4 + 0.8 * d) + blf.dimensions(0, ob.name)[0] for ob, d in rows), default=h * 3)
+    left = widest + STATUS_ICONS * h + 0.8 * h
+    return max(0.2, min(0.8, left / max(width, 1))), width
+
+
+STATUS_ICONS = 3            # the two dots and the check
+DIVIDER_GREY = (0.12, 0.12, 0.12, 1.0)
+DIVIDER_MARGIN = -4         # UI px (times the UI scale): puts the separator midway between the check column and the tags
+
+
 def _status_split(context, buttons):
     """The split factor that leaves exactly `buttons` icon widths (plus a little room) for the status side of a row,
     whatever the panel width and the Size (zoom)."""
@@ -559,33 +583,24 @@ def _om_menu_share():
     w = menus.panel_width()
     if not w:
         return OM_MENU_SHARE
-    need = OM_SEARCH_MIN_PX * bpy.context.preferences.system.ui_scale
+    need = OM_SEARCH_MIN_PX * bpy.context.preferences.system.ui_scale + 3 * _icon_px()
     return max(0.35, min(OM_MENU_SHARE, 1 - need / max(w, 1)))
 
 
 def draw_om_head(layout, context):
-    """The Object Manager's title, menus, search and tool row."""
-    manager_title(layout, "Objects")
+    """The top of the Object Manager's panel, above the rows: the tab, then one row with the menus, the tools and the
+    search box."""
+    manager_title(layout, "Objects", right_tabs="b4d_om_tab")
     share = _om_menu_share()
-    sp = layout.split(factor=share, align=True)           # menus on the left, the search box at the right edge
+    sp = layout.split(factor=share, align=True)           # menus on the left, tools and the search box at the right
     bar = sp.row(align=True)
     bar.label(text="", icon="COLLAPSEMENU")
     menus.menu_bar(bar, OM_MENUS, avail=menus.panel_width(share, _icon_px()))
-    sp.prop(context.window_manager, "b4d_om_search", text="", icon="VIEWZOOM", placeholder="Search")
-    tools = layout.split(factor=0.2, align=True).row(align=True)   # the tool row: scroll to the active object, solo
-    tools.operator("blenda4d.om_scroll_active", text="", icon="ZOOM_SELECTED", emboss=False)
-    tools.operator("blenda4d.om_solo", text="", icon="SELECT_INTERSECT", emboss=False,
-                   depress=_in_solo(context))
-    tools.operator("blenda4d.solo", text="", icon="HIDE_OFF", emboss=False).mode = "OFF"   # Solo Off
-
-
-class BLENDA4D_PT_om_head(roles.RolePanel, bpy.types.Panel):
-    """The Object Manager's top strip, an area of its own so the Size slider zooms only the object rows."""
-    bl_label = "Object Manager"
-    role = "OM_HEAD"
-
-    def draw(self, context):
-        draw_om_head(self.layout, context)
+    right = sp.row(align=True)
+    right.operator("blenda4d.om_scroll_active", text="", icon="ZOOM_SELECTED", emboss=False)
+    right.operator("blenda4d.om_solo", text="", icon="SELECT_INTERSECT", emboss=False, depress=_in_solo(context))
+    right.operator("blenda4d.solo", text="", icon="HIDE_OFF", emboss=False).mode = "OFF"   # Solo Off
+    right.prop(context.window_manager, "b4d_om_search", text="", icon="VIEWZOOM", placeholder="Search")
 
 
 class BLENDA4D_PT_objects(roles.RolePanel, bpy.types.Panel):
@@ -594,23 +609,24 @@ class BLENDA4D_PT_objects(roles.RolePanel, bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        if not head_apart(context.window.screen):          # a layout saved before the head had its own strip
-            draw_om_head(layout, context)
-            layout.separator(factor=0.3)
+        draw_om_head(layout, context)
         col = layout.column(align=True)
         drop = context.window_manager.b4d_om_drop
         rows = visible_rows(context)
-        tags = max((len(_tags(ob)) + (ob.type == "CAMERA") for ob, _d in rows), default=0)   # every row keeps room for the most tags,
-        split = _status_split(context, 3 + tags)                      # so the dots and checks stay in columns
+        tags = max((len(_tags(ob)) + (ob.type == "CAMERA") for ob, _d in rows), default=0)
+        share, width = _name_column(context, context.region, rows)
         for ob, depth in rows:
-            self._row(col, ob, depth, tags, split)
+            self._row(col, ob, depth, tags, share, width)
 
         if drop == TOP_LEVEL:
             col.label(text="Move to top level", icon="TRIA_UP")
 
-    def _row(self, col, ob, depth, tag_room=0, split=0.6):
-        sp = col.split(factor=split, align=True)          # name side | a fixed-width status side: a long name or a
-        row = sp.row(align=True)                          # larger Size never squeezes the dots and checks together
+    def _row(self, col, ob, depth, tag_room=0, share=0.5, width=300.0):
+        sp = col.split(factor=share, align=True)          # name, dots and check | the tags, behind a separator
+        left = sp.row(align=True)
+        status_share = max(0.05, min(0.6, (STATUS_ICONS * row_height() + 0.8 * row_height()) / max(width * share, 1)))
+        ns = left.split(factor=1 - status_share, align=True)
+        row = ns.row(align=True)
         if depth:
             row.separator(factor=1.6 * depth)
         if ob.children:
@@ -621,11 +637,14 @@ class BLENDA4D_PT_objects(roles.RolePanel, bpy.types.Panel):
         name = row.row(align=True)
         name.alignment = "LEFT"
         name.label(text=ob.name, **type_icon_kw(ob))     # a label, so a press here can start a drag (see om_drag)
+        status = ns.row(align=True)                       # next to the name, left-aligned, in a column of their own
+        status.alignment = "LEFT"
+        status.prop(ob, "hide_viewport", text="", emboss=False, icon="LAYER_ACTIVE" if not ob.hide_viewport else "LAYER_USED")
+        status.prop(ob, "hide_render", text="", emboss=False, icon="LAYER_ACTIVE" if not ob.hide_render else "LAYER_USED")
+        status.prop(ob, "b4d_enabled", text="", emboss=False, icon="CHECKMARK" if ob.b4d_enabled else "X")
         right = sp.row(align=True)
-        right.alignment = "RIGHT"
-        right.prop(ob, "hide_viewport", text="", emboss=False, icon="LAYER_ACTIVE" if not ob.hide_viewport else "LAYER_USED")
-        right.prop(ob, "hide_render", text="", emboss=False, icon="LAYER_ACTIVE" if not ob.hide_render else "LAYER_USED")
-        right.prop(ob, "b4d_enabled", text="", emboss=False, icon="CHECKMARK" if ob.b4d_enabled else "X")
+        right.alignment = "LEFT"
+        right.separator(factor=0.5)
         if ob.type == "CAMERA":                            # the camera's view switch: filled while looking through it
             right.operator("blenda4d.om_look_through", text="", emboss=False,
                            icon="VIEW_CAMERA" if looking_through(bpy.context, ob) else "VIEW_CAMERA_UNSELECTED").name = ob.name
@@ -636,8 +655,6 @@ class BLENDA4D_PT_objects(roles.RolePanel, bpy.types.Panel):
                 right.label(text="", icon_value=right.icon(mat))
             else:
                 right.label(text="", icon=icon)
-        for _ in range(tag_room - len(_tags(ob)) - (ob.type == "CAMERA")):
-            right.label(text="", icon="BLANK1")
 
 
 def _big_view(context):
@@ -1378,7 +1395,7 @@ class BLENDA4D_PT_assets(roles.RolePanel, bpy.types.Panel):
 classes = (BLENDA4D_OT_am_tab, BLENDA4D_OT_layer_new, BLENDA4D_OT_layer_assign, BLENDA4D_OT_layer_select, BLENDA4D_OT_om_look_through, BLENDA4D_OT_size_step, BLENDA4D_OT_om_delete, BLENDA4D_OT_om_solo, BLENDA4D_OT_om_scroll_active, BLENDA4D_OT_om_select, BLENDA4D_OT_om_drag, BLENDA4D_OT_om_rename, BLENDA4D_OT_om_fold, BLENDA4D_OT_om_expand, BLENDA4D_OT_group, BLENDA4D_OT_new_material,
            BLENDA4D_OT_mat_pick, BLENDA4D_OT_mat_tag, *OM_MENUS, *AM_MENUS, *MM_MENUS, *AB_MENUS,
            *(menus.make_more(m) for m in (OM_MENUS, AM_MENUS, MM_MENUS)),
-           BLENDA4D_PT_objects, BLENDA4D_PT_om_bar, BLENDA4D_PT_om_head, BLENDA4D_PT_attributes, BLENDA4D_PT_materials, BLENDA4D_PT_assets)
+           BLENDA4D_PT_objects, BLENDA4D_PT_om_bar, BLENDA4D_PT_attributes, BLENDA4D_PT_materials, BLENDA4D_PT_assets)
 
 
 def _vis_get(attr):
@@ -1438,6 +1455,7 @@ def register():
                                             default=0.0, min=0.0, max=100.0, subtype="PERCENTAGE", precision=0,
                                             update=_om_zoom)
     W.b4d_am_tab = bpy.props.EnumProperty(description='The page of settings the Attribute Manager shows', items=_tab_items, name="Page")
+    W.b4d_om_tab = bpy.props.EnumProperty(description='The Object Manager', items=[("OBJECTS", "Objects", MANAGER_TIPS["Objects"])])
     W.b4d_right_tab = bpy.props.EnumProperty(description='Show the Attribute Manager, the Layers or the Variations', items=[("ATTRIBUTES", "Attributes", "The selected object's, tag's or material's settings"),
                                                 ("LAYERS", "Layers", "The scene's layers: show, hide and select the objects in each"),
                                                 ("VARIATIONS", "Variations", "Versions of the scene to switch between")])
@@ -1499,7 +1517,13 @@ def _draw_rows():
                                  indices=[(0, 1, 2), (0, 2, 3)])
         shader.uniform_float("color", col)
         batch.draw(shader)
+    share, _w = _name_column(context, region, rows)       # the separator between the names and the tags
+    x = share * region.width + DIVIDER_MARGIN * context.preferences.system.ui_scale
+    top = region.view2d.view_to_region(0, -rows_top() * h, clip=False)[1]
+    batch = batch_for_shader(shader, "TRIS", {"pos": [(x, 0), (x + 2, 0), (x + 2, top), (x, top)]}, indices=[(0, 1, 2), (0, 2, 3)])
     gpu.state.blend_set("NONE")
+    shader.uniform_float("color", DIVIDER_GREY)
+    batch.draw(shader)
 
 
 def _add_keymap():
@@ -1531,7 +1555,7 @@ def unregister():
     O, W = bpy.types.Object, bpy.types.WindowManager
     for n in ("b4d_om_closed", "b4d_enabled", "b4d_vis_editor", "b4d_vis_render"):
         delattr(O, n)
-    for n in ("b4d_om_search", "b4d_om_drop", "b4d_om_zoom", "b4d_am_tab", "b4d_right_tab", "b4d_material", "b4d_ab_tab", "b4d_ab_search", "b4d_am_subject"):
+    for n in ("b4d_om_search", "b4d_om_drop", "b4d_om_zoom", "b4d_am_tab", "b4d_om_tab", "b4d_right_tab", "b4d_material", "b4d_ab_tab", "b4d_ab_search", "b4d_am_subject"):
         delattr(W, n)
     for c in reversed(classes):
         bpy.utils.unregister_class(c)

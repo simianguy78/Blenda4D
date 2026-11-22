@@ -22,7 +22,6 @@ STRIP_ZOOM = 0               # the create column is drawn at its own size (strip
 MANAGERS_PX = 330
 MATERIALS_PX = 230
 MM_BAR_PX = 30
-OM_HEAD_PX = 88               # the Object Manager's title, menus and tool row (unzoomed; the Size slider zooms only the rows)
 ASSETS_PX = 420
 EDGE = 3
 
@@ -185,7 +184,7 @@ def add_materials(window):
 
 
 COLUMNS = {"MATERIALS": (add_materials, "MM_BAR"), "ASSETS": (add_assets, "AB_BAR")}
-CORE = ("DOC_TABS", "PALETTE", "MODES", "OBJECTS", "ATTRIBUTES", "OM_BAR", "OM_HEAD")
+CORE = ("DOC_TABS", "PALETTE", "MODES", "OBJECTS", "ATTRIBUTES", "OM_BAR")
 
 
 _coords_shown = [True]       # used when the add-on's preferences cannot be read (run from a checkout in tests)
@@ -342,12 +341,6 @@ def steps(window, materials=False, assets=False):
         objs = sorted(roles.areas(screen, "OBJECTS") + roles.areas(screen, "OM_BAR"), key=lambda a: a.y)
         if len(roles.areas(screen, "OBJECTS")) == 2:       # the split handed back the other half
             yield from make_role(window, min(roles.areas(screen, "OBJECTS"), key=lambda a: a.y), "OM_BAR")
-    objs = roles.areas(screen, "OBJECTS")
-    if objs:                                               # and its top strip: title, menus, search, tool row
-        head = yield from split(window, objs[0], "HORIZONTAL", px(OM_HEAD_PX) + EDGE, "TOP")
-        yield from make_role(window, head, "OM_HEAD")
-        if len(roles.areas(screen, "OBJECTS")) == 2:       # the split handed back the other half
-            yield from make_role(window, max(roles.areas(screen, "OBJECTS"), key=lambda a: a.y), "OM_HEAD")
     # 3. the viewport and timeline lose Blender's own chrome; the toolbar strip moves to the viewport's right edge
     for a in screen.areas:
         if a.type == "VIEW_3D":

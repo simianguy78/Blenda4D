@@ -38,7 +38,6 @@ def plan(window):
         ("PALETTE", p(build.PALETTE_PX), "BOTTOM"),
         ("MODES", p(build.MODES_PX), "RIGHT"),
         ("TIMELINE", tl, "TOP"),
-        ("OM_HEAD", p(build.OM_HEAD_PX), "BOTTOM"),
         ("OM_BAR", p(build.MM_BAR_PX), "TOP"),
         ("MM_BAR", p(build.MM_BAR_PX), "TOP"),
         ("AB_BAR", p(build.MM_BAR_PX), "TOP"),
