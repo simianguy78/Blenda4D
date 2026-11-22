@@ -248,6 +248,36 @@ def test_object_page_on_select(cube):
         check(wm.b4d_am_tab == "COORD", f"{ob.name} stays on the page the user picked")
 
 
+def test_layers(cube):
+    """The Layers tab next to Attributes: New Layer groups the selected objects; rows draw; Select picks them again."""
+    wm = bpy.context.window_manager
+    tabs = [i.identifier for i in wm.bl_rna.properties["b4d_right_tab"].enum_items]
+    check(tabs[:2] == ["ATTRIBUTES", "LAYERS"], f"the Layers tab sits next to Attributes {tabs}")
+    for ob in bpy.context.view_layer.objects:
+        ob.select_set(False)
+    cube.select_set(True)
+    scene = bpy.context.scene
+    before = len(scene.collection.children)
+    check(bpy.ops.blenda4d.layer_new() == {"FINISHED"} and len(scene.collection.children) == before + 1,
+          "New Layer adds a layer")
+    col = scene.collection.children[-1]
+    check(tuple(cube.users_collection) == (col,), "the selected object moved into the new layer")
+    root = Rec()
+    managers.draw_layers(root, bpy.context)
+    ops = [it for _lay, it in leaves(root) if it[1] == "operator"]
+    names = [it for _lay, it in leaves(root) if it[1] == "prop" and it[2][1] == "name"]
+    check(len(ops) >= 3 and names, f"the layer is drawn with its name, select and move buttons ({len(ops)} buttons)")
+    cube.select_set(False)
+    check(bpy.ops.blenda4d.layer_select(name=col.name) == {"FINISHED"} and cube.select_get(),
+          "Select picks the layer's objects")
+    other = bpy.data.objects.new("LayerTest", None)
+    bpy.context.scene.collection.objects.link(other)
+    other.select_set(True)
+    check(bpy.ops.blenda4d.layer_assign(name=col.name) == {"FINISHED"} and other.name in col.objects,
+          "Move Selected Here puts the selected objects in the layer")
+    bpy.data.objects.remove(other)
+
+
 def test_every_kind():
     """Every kind's every page draws, and every setting on it is a row."""
     for kind, k in sorted(kinds.KINDS.items()):
@@ -292,6 +322,7 @@ try:
     cube = test_cube()
     test_tabs(cube)
     test_object_page_on_select(cube)
+    test_layers(cube)
     test_every_kind()
     switch._unregister_mode()
 except Exception:

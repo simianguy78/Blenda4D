@@ -68,7 +68,9 @@ def apply():
     _set(ui.wcol_regular, "text_sel", OM_SEL)
     _set(ui.wcol_regular, "text", (0.651, 0.651, 0.651))      # manager menus are a6a6a6
     _set(ui.wcol_radio, "text_sel", OM_ACTIVE)
-    _set(ui.wcol_radio, "inner_sel", (0, 0, 0, 0))
+    _set(ui.wcol_radio, "inner", PANEL_DARK)                  # tabs and segmented choices: the others darker,
+    _set(ui.wcol_radio, "inner_sel", FIELD)                   # the chosen one lighter (and its text yellow)
+    _set(ui.wcol_radio, "outline", PANEL_DARK)
     _set(ui.wcol_menu_back, "inner", MENU_BACK)
     _set(ui.wcol_menu_back, "outline", (0.212, 0.212, 0.212, 1.0))
     # menus: flat rows on the menu background, a grey band on the hovered row

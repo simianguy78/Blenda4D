@@ -74,6 +74,23 @@ def show(name):
     return go
 
 
+def right_tab(key):
+    def go():
+        wm = bpy.context.window_manager
+        wm.b4d_right_tab = key
+        for a in wm.windows[0].screen.areas:
+            a.tag_redraw()
+    return go
+
+
+def make_layer():
+    ob = bpy.data.objects["Cube"]
+    for o in bpy.context.view_layer.objects:
+        o.select_set(False)
+    ob.select_set(True)
+    check(bpy.ops.blenda4d.layer_new() == {"FINISHED"}, "New Layer from the Cube")
+
+
 def finish():
     print("B4D AM RESULT", "FAIL" if FAILS else "PASS", len(FAILS), FAILS, flush=True)
 
@@ -90,4 +107,6 @@ PLAN += [watch_draw, N, N,
          tab("PHYSICAL"), N, show("camera_physical"),
          lambda: select("Area"), tab("OBJECT"), N, show("light_object"),
          lambda: select("Floor"), tab("OBJECT"), N, show("floor_object"),
+         lambda: select("Cube"), tab("OBJECT"), make_layer, right_tab("LAYERS"), N, N, show("layers_tab"),
+         right_tab("ATTRIBUTES"), N, N, show("attributes_tab"),
          finish, done, lambda: bpy.ops.wm.quit_blender()]
