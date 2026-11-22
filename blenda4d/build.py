@@ -282,13 +282,26 @@ def steps(window, materials=False, assets=False):
     from . import render_settings
     render_settings.show_view(screen)                     # Render Settings in the viewport's place: viewport back first
     # 1. everything back into one viewport
-    for _ in range(40):
+    for _ in range(60):
         extra = [a for a in screen.areas if a.type != "VIEW_3D"] + \
                 [a for a in screen.areas if a.type == "VIEW_3D" and a != biggest_view(screen)]
         if not extra:
             break
-        with _ov(window, extra[0]):
-            bpy.ops.screen.area_close()
+        # a window that shrank leaves the tools column very narrow, and Blender then refuses to close a strip that
+        # runs across it ("A narrow vertical area interferes"): close the narrow areas first, and when one close is
+        # refused, try the next area instead of the same one again
+        extra.sort(key=lambda a: a.width >= px(MODES_PX))
+        count = len(screen.areas)
+        for a in extra:
+            try:
+                with _ov(window, a):
+                    bpy.ops.screen.area_close()
+            except RuntimeError:
+                continue
+            if len(screen.areas) < count:
+                break
+        else:
+            raise RuntimeError("no area could be closed")
         yield
     view = biggest_view(screen)
     hdr = _region(view, "HEADER").height if _region(view, "HEADER") else 26
