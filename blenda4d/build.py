@@ -13,7 +13,7 @@ from . import roles
 
 DOC_TABS_PX = 30
 PALETTE_PX = 40               # one row of icon buttons (bars.PALETTE_SCALE) and the panel's margins
-TIMELINE_PX = 64
+TIMELINE_PX = 82                # with the header: tall enough for the Coordinate Manager beside it (header row + X, Y, Z rows)
 TOOL_ZOOM = {"CREATE": 8}     # zoom steps (as Ctrl+scroll): larger icons, boxes stay square
 MODES_PX = 55                 # one column of square buttons (bars.MODES_SCALE) and the panel's margins: wide enough
                               # that the tool icons, which Blender draws about 5 px right of centre, stay inside
