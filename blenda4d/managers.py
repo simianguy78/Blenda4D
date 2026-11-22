@@ -714,6 +714,168 @@ def _tab_items(self, context):
     return _page_tabs(ob) if ob is not None else TABS_COMMON
 
 
+# --- Attribute Manager rows ------------------------------------------------------------------------------------------
+# Every setting on a page is one row: its keyframe marker, its name on the left, then a short number field. A number
+# with a small range is a slider across the rest of the row; switches, lists and text fill the row.
+LABEL_SHARE = 0.42           # the name's share of the row (long names such as "Fillet Subdivision" fit)
+FIELD_UNITS = 6              # a number field's width, in Blender's widget units
+SLIDER_SPAN = 1000           # a number whose soft range is no wider than this becomes a slider
+_RAW_KW = ("expand", "icon_only", "toggle")
+
+
+def _raw(kw):
+    """Buttons that carry their own text (expanded lists, icon buttons, toggles) keep Blender's own drawing."""
+    return any(kw.get(k) for k in _RAW_KW) or kw.get("emboss") is False
+
+
+def _rna_prop(owner, attr):
+    try:
+        return owner.bl_rna.properties[attr]
+    except (AttributeError, KeyError, TypeError):
+        return None
+
+
+def _bounded(p):
+    if p is None or p.type not in ("INT", "FLOAT"):
+        return False
+    lo, hi = p.soft_min, p.soft_max
+    return abs(lo) < 1e9 and abs(hi) < 1e9 and 0 < hi - lo <= SLIDER_SPAN
+
+
+def attr_row(layout, owner, attr, label=None, index=-1, active=True, slider=None, **kw):
+    """One Attribute Manager row: keyframe marker | name | field (and slider). Returns the row."""
+    p = _rna_prop(owner, attr)
+    if label is None:
+        label = p.name if p is not None else attr
+    while isinstance(layout, (AttrColumn, AttrRow)):    # draw straight into Blender's layout
+        layout = layout._lay if isinstance(layout, AttrColumn) else layout._parent
+    row = layout.row(align=False)
+    row.use_property_split = False
+    row.use_property_decorate = False
+    if not active:
+        row.active = False
+    try:
+        row.prop_decorator(owner, attr, index=index)
+    except (TypeError, RuntimeError):
+        row.label(text="", icon="BLANK1")
+    sp = row.split(factor=LABEL_SHARE, align=True)
+    sp.label(text=label)
+    rest = sp.row(align=True)
+    if _raw(kw):                                         # buttons that carry their own text
+        rest.prop(owner, attr, index=index, **kw)
+        return row
+    kw.pop("toggle", None)
+    number = p is not None and p.type in ("INT", "FLOAT") and p.subtype not in ("COLOR", "COLOR_GAMMA")
+    if slider is None:
+        slider = _bounded(p)
+    if number and not slider:
+        rest.alignment = "LEFT"                        # a short field, as wide as any number needs
+        f = rest.row(align=True)
+        f.ui_units_x = FIELD_UNITS
+        f.prop(owner, attr, index=index, text="", **kw)
+    else:
+        rest.prop(owner, attr, index=index, text="", slider=bool(slider and number), **kw)
+    return row
+
+
+class AttrColumn:
+    """A page's column: settings drawn with prop() become Attribute Manager rows (attr_row), everything else is the
+    plain Blender layout. Pages written for a plain column work unchanged; a sub-column is one of these again."""
+
+    def __init__(self, layout):
+        object.__setattr__(self, "_lay", layout)
+
+    def prop(self, data, property, text=None, index=-1, **kw):
+        p = _rna_prop(data, property)
+        vector = (p is not None and index == -1 and getattr(p, "is_array", False) and p.array_length in (2, 3, 4)
+                  and p.subtype not in ("COLOR", "COLOR_GAMMA") and p.type in ("INT", "FLOAT", "BOOLEAN")
+                  and not _raw(kw))
+        if vector:                                     # one row per axis, as the Coord. page shows them
+            name = text if text is not None else p.name
+            sub = self._lay.column(align=True)
+            for i in range(p.array_length):
+                attr_row(sub, data, property, label=f"{name} . {'XYZW'[i]}", index=i, **kw)
+            return None
+        label = text if text is not None else None
+        if label == "" and p is not None and p.type == "BOOLEAN":
+            label = None
+        return attr_row(self._lay, data, property, label=label, index=index, **kw)
+
+    def column(self, **kw):
+        return AttrColumn(self._lay.column(**kw))
+
+    def row(self, **kw):
+        return AttrRow(self._lay, kw)
+
+    def __getattr__(self, name):
+        return getattr(self._lay, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._lay, name, value)
+
+
+class AttrRow:
+    """A page's row: a setting drawn into it becomes an Attribute Manager row (with the row's greying); buttons and
+    labels drawn into it share one plain Blender row, as the page laid them out."""
+
+    def __init__(self, parent, kw):
+        d = self.__dict__
+        d["_parent"], d["_kw"], d["_set"], d["_col"], d["_row"] = parent, kw, {}, None, None
+
+    def _apply(self, lay):
+        for k, v in self._set.items():
+            if k != "alignment" or lay is self._row:
+                setattr(lay, k, v)
+        return lay
+
+    def prop(self, data, property, text=None, index=-1, **kw):
+        if self._col is None:
+            self.__dict__["_col"] = self._apply(self._parent.column(align=True))
+        return AttrColumn(self._col).prop(data, property, text=text, index=index, **kw)
+
+    def __getattr__(self, name):
+        if name in self._set:
+            return self._set[name]
+        if self._row is None:
+            self.__dict__["_row"] = self._apply(self._parent.row(**self._kw))
+        return getattr(self._row, name)
+
+    def __setattr__(self, name, value):
+        self._set[name] = value
+        for lay in (self._col, self._row):
+            if lay is not None:
+                setattr(lay, name, value)
+
+
+class BLENDA4D_OT_am_tab(bpy.types.Operator):
+    bl_idname = "blenda4d.am_tab"
+    bl_label = "Page"
+    bl_options = {"INTERNAL"}
+    key: bpy.props.StringProperty()
+    label: bpy.props.StringProperty()
+
+    @classmethod
+    def description(cls, context, props):
+        return f"Show the {props.label} page"
+
+    def execute(self, context):
+        context.window_manager.b4d_am_tab = self.key
+        return {"FINISHED"}
+
+
+def page_tabs(layout, ob, current):
+    """The page tabs: short buttons from the left, the shown page filled; more than five wrap onto rows of four."""
+    tabs = _page_tabs(ob)
+    per = 4 if len(tabs) > 5 else len(tabs)
+    col = layout.column(align=False)
+    for start in range(0, len(tabs), max(per, 1)):
+        row = col.row(align=False)
+        row.alignment = "LEFT"
+        for key, label, _d in tabs[start:start + per]:
+            o = row.operator("blenda4d.am_tab", text=label, depress=key == current)
+            o.key, o.label = key, label
+
+
 def _vec(col, data, prop, label, axes="XYZ"):
     sub = col.column(align=True)
     for i, a in enumerate(axes):
@@ -775,7 +937,7 @@ def page_primitive(col, ob, kind):
         if sname not in values:
             continue
         owner, attr = values[sname]
-        row = col.row(align=True)
+        row = col.column(align=True)
         switch = _NEEDS.get(sname)
         if switch and switch in values:
             o2, a2 = values[switch]
@@ -784,7 +946,7 @@ def page_primitive(col, ob, kind):
             except (AttributeError, TypeError):
                 pass
         if stype == "VECTOR":
-            sub = col.column(align=True)
+            sub = row.column(align=True)
             for i, axis in enumerate("XYZ"):
                 sub.prop(owner, attr, index=i, text=f"{sname} . {axis}")
         else:
@@ -976,16 +1138,11 @@ class BLENDA4D_PT_attributes(roles.RolePanel, bpy.types.Panel):
         label = (kinds.KINDS[own]["label"] if own else
                  (primitives.PRIMS[kind][1] + " Object") if kind else TYPE_LABEL.get(ob.type, "Object"))
         head.label(text=f"{label} [{ob.name}]", **type_icon_kw(ob))
-        if len(_page_tabs(ob)) > 5:                       # many pages: tabs wrap onto two rows of four
-            tg = layout.grid_flow(row_major=True, columns=4, even_columns=True, align=True)
-            for key, label, _d in _page_tabs(ob):
-                tg.prop_enum(wm, "b4d_am_tab", key, text=label)
-        else:
-            layout.row(align=True).prop(wm, "b4d_am_tab", expand=True)
         tab = wm.b4d_am_tab
         tabs = [t[0] for t in _page_tabs(ob)]
         if tab not in tabs:
             tab = "OBJECT" if "OBJECT" in tabs else tabs[min(2, len(tabs) - 1)]
+        page_tabs(layout, ob, tab)
         layout.separator(factor=0.5)
         page = kinds.KINDS[own]["pages"].get(tab) if own else None
         if page is None and ob.type == "CAMERA" and tab in CAMERA_PAGES:
@@ -995,9 +1152,7 @@ class BLENDA4D_PT_attributes(roles.RolePanel, bpy.types.Panel):
             "BASIC": "Basic Properties", "COORD": "Coordinates", "OBJECT": "Object Properties", "PHONG": "Phong",
             "DETAILS": "Details", "SHADOW": "Shadow"}.get(tab, dict((t[0], t[1]) for t in _page_tabs(ob)).get(tab, tab))
         layout.label(text=title)
-        col = layout.column()
-        col.use_property_split = True
-        col.use_property_decorate = True
+        col = AttrColumn(layout.column())
         (page or PAGES.get(tab, lambda c, o: None))(col, ob)
 
 
@@ -1133,7 +1288,7 @@ class BLENDA4D_PT_assets(roles.RolePanel, bpy.types.Panel):
             b.prop_enum(wm, "b4d_ab_tab", tab, text=label, icon=icon)
 
 
-classes = (BLENDA4D_OT_om_look_through, BLENDA4D_OT_size_step, BLENDA4D_OT_om_delete, BLENDA4D_OT_om_solo, BLENDA4D_OT_om_scroll_active, BLENDA4D_OT_om_select, BLENDA4D_OT_om_drag, BLENDA4D_OT_om_rename, BLENDA4D_OT_om_fold, BLENDA4D_OT_om_expand, BLENDA4D_OT_group, BLENDA4D_OT_new_material,
+classes = (BLENDA4D_OT_am_tab, BLENDA4D_OT_om_look_through, BLENDA4D_OT_size_step, BLENDA4D_OT_om_delete, BLENDA4D_OT_om_solo, BLENDA4D_OT_om_scroll_active, BLENDA4D_OT_om_select, BLENDA4D_OT_om_drag, BLENDA4D_OT_om_rename, BLENDA4D_OT_om_fold, BLENDA4D_OT_om_expand, BLENDA4D_OT_group, BLENDA4D_OT_new_material,
            BLENDA4D_OT_mat_pick, BLENDA4D_OT_mat_tag, *OM_MENUS, *AM_MENUS, *MM_MENUS, *AB_MENUS,
            *(menus.make_more(m) for m in (OM_MENUS, AM_MENUS, MM_MENUS)),
            BLENDA4D_PT_objects, BLENDA4D_PT_om_bar, BLENDA4D_PT_om_head, BLENDA4D_PT_attributes, BLENDA4D_PT_materials, BLENDA4D_PT_assets)

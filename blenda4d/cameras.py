@@ -20,22 +20,8 @@ LABEL_SPLIT = 0.5            # label half / field half, so long names such as Fi
 
 
 def _row(col, owner, attr, label, active=True, **kw):
-    r = col.row(align=True)
-    r.use_property_split = False                      # this row lays out its own label | field halves
-    r.use_property_decorate = False
-    r.active = bool(active)
-    if owner.bl_rna.properties[attr].type == "BOOLEAN":
-        sp = r.split(factor=LABEL_SPLIT)
-        sp.label(text="")
-        sp.prop(owner, attr, text=label, **kw)
-    else:
-        sp = r.split(factor=LABEL_SPLIT, align=True)
-        lab = sp.row()
-        lab.alignment = "RIGHT"
-        lab.label(text=label)
-        sp.prop(owner, attr, text="", **kw)
-    r.prop_decorator(owner, attr)
-    return r
+    """One page row, drawn as every Attribute Manager row is (managers.attr_row)."""
+    return managers.attr_row(col, owner, attr, label=label, active=bool(active), **kw)
 
 
 def page_object(col, ob):
@@ -56,17 +42,8 @@ def page_object(col, ob):
     _row(col, cam, "b4d_offset_x", "Film Offset X (%)")
     _row(col, cam, "b4d_offset_y", "Film Offset Y (%)")
     col.separator()
-    r = col.row(align=True)
-    r.use_property_split = False
-    r.use_property_decorate = False
-    sp = r.split(factor=LABEL_SPLIT, align=True)
-    lab = sp.row()
-    lab.alignment = "RIGHT"
-    lab.label(text="Focus Distance")
-    f = sp.row(align=True)
-    f.prop(cam.dof, "focus_distance", text="")
-    f.operator("ui.eyedropper_depth", text="", icon="EYEDROPPER")
-    r.prop_decorator(cam.dof, "focus_distance")
+    r = _row(col, cam.dof, "focus_distance", "Focus Distance")
+    r.operator("ui.eyedropper_depth", text="", icon="EYEDROPPER")
     _row(col, cam.dof, "focus_object", "Focus Object")
 
 
@@ -104,7 +81,7 @@ def page_composition(col, ob):
 PAGES = {"OBJECT": page_object, "PHYSICAL": page_physical, "DETAILS": page_details, "COMPOSITION": page_composition}
 
 
-# --- settings shown in the C4D-style units ---------------------------------------------------------------------------
+# --- settings shown in Blenda's own units ----------------------------------------------------------------------------
 def _offset(axis):
     attr = "shift_" + axis
 
