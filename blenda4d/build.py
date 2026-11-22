@@ -12,10 +12,11 @@ import bpy
 from . import roles
 
 DOC_TABS_PX = 30
-PALETTE_PX = 62
+PALETTE_PX = 40               # one row of icon buttons (bars.PALETTE_SCALE) and the panel's margins
 TIMELINE_PX = 64
-TOOL_ZOOM = {"MODES": 3, "CREATE": 8, "PALETTE": 7}   # zoom steps (as Ctrl+scroll): larger icons, boxes stay square
-MODES_PX = 70                 # with the 3-step zoom and 1.9 tall buttons: square boxes, icon evenly inside
+TOOL_ZOOM = {"CREATE": 8}     # zoom steps (as Ctrl+scroll): larger icons, boxes stay square
+MODES_PX = 55                 # one column of square buttons (bars.MODES_SCALE) and the panel's margins: wide enough
+                              # that the tool icons, which Blender draws about 5 px right of centre, stay inside
 CREATE_PX = 70
 STRIP_ZOOM = 0               # the create column is drawn at its own size (strip.py): the strip needs no zoom
 MANAGERS_PX = 330

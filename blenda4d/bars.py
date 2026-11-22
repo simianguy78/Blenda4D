@@ -373,6 +373,7 @@ class BLENDA4D_PT_doc_tabs(roles.RolePanel, bpy.types.Panel):
         row.operator("wm.read_homefile", text="", icon="ADD", emboss=False)
 
 
+PALETTE_SCALE = 1.35         # the icon bar's buttons: slim, as in the drawn layout (build.PALETTE_PX)
 PALETTE_GAP = 1.3            # between the command bar groups: about a third of a button, as in the private version
 
 
@@ -393,8 +394,8 @@ class BLENDA4D_PT_palette(roles.RolePanel, bpy.types.Panel):
         whole = layout.row(align=False)
         top = whole.row(align=True)                      # joined: only the separators below space the groups
         top.alignment = "LEFT"
-        top.scale_y = 1.2
-        top.scale_x = 1.2
+        top.scale_y = PALETTE_SCALE
+        top.scale_x = PALETTE_SCALE
         screen = context.window.screen
         g = top.row(align=True)
         _palette_button(g, "blenda4d.toggle_column", "ASSET_MANAGER", depress=bool(roles.areas(screen, "ASSETS")), name="ASSETS")
@@ -428,8 +429,8 @@ class BLENDA4D_PT_palette(roles.RolePanel, bpy.types.Panel):
             topbar.draw(top, context)
         end = whole.row(align=True)
         end.alignment = "RIGHT"
-        end.scale_y = 1.2                                # the same size as the buttons on the left
-        end.scale_x = 1.2
+        end.scale_y = PALETTE_SCALE                      # the same size as the buttons on the left
+        end.scale_x = PALETTE_SCALE
         g = end.row(align=True)
         _palette_button(g, "blenda4d.toggle_column", "MATERIAL", depress=bool(roles.areas(screen, "MATERIALS")), name="MATERIALS")
         _palette_button(g, "screen.userpref_show", "PREFERENCES")
@@ -446,6 +447,7 @@ TOOL_ICONS = {"builtin.select_box": "ops.generic.select_box", "builtin.move": "o
               "builtin.measure": "ops.view3d.ruler", "builtin.cursor": "ops.generic.cursor"}
 
 
+MODES_SCALE = 1.8            # the tools column's buttons, as tall as the column makes them wide (build.MODES_PX)
 CREATE_SCALE = 1.35          # Blender's 16 px icons: shorter buttons, more zoom (build.TOOL_ZOOM) = larger icons
 
 
@@ -476,7 +478,7 @@ class BLENDA4D_PT_modes(roles.RolePanel, bpy.types.Panel):
     role = "MODES"
 
     def draw(self, context):
-        draw_tools(_column(self.layout), context)
+        draw_tools(_column(self.layout, MODES_SCALE), context)
 
 
 class BLENDA4D_PT_view_tools(bpy.types.Panel):
