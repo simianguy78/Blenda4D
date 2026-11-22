@@ -68,12 +68,11 @@ def stretched(old, new):
     return [k for k in old if k in new and abs(new[k] - old[k]) > TOLERANCE]
 
 
-def fit(window, done=None):
-    """Build the layout again at its exact sizes (calling done() when it is built). Returns True when a build was
-    started."""
+def fit(window):
+    """Build the layout again at its exact sizes. Returns True when a build was started."""
     if build.busy() or not build.intact(window.screen):
         return False
-    build.rebuild(window, done=done, force=True)
+    build.rebuild(window, force=True)
     return True
 
 
@@ -90,27 +89,18 @@ _state = {}                   # window pointer -> {"size", "since", "base"}: siz
 #                               sizes measured while the window last kept its size
 
 
-SETTLED_AFTER = 0.75          # seconds after a build before its strip sizes are taken as the ones to keep
+PLAN_TOLERANCE = 15           # px a strip may be off its planned size after a build (area edges, rounding)
 
 
-def _fitted(window, st):
-    """The layout was just built: its strips (measured once Blender has laid them out, if the window kept its size
-    meanwhile) are the sizes to keep, so a resize that starts right afterwards is compared with them."""
-    size = (window.width, window.height)
-
-    def measure():
-        try:
-            if (window.width, window.height) == size and build.intact(window.screen) and not build.busy():
-                st["base"] = sizes(window)
-        except (ReferenceError, RuntimeError, AttributeError):
-            pass
-        return None
-    bpy.app.timers.register(measure, first_interval=SETTLED_AFTER)
+def off_plan(window, now):
+    """Strips whose size is further from the plan than a build leaves them."""
+    return [what for what, size, _edge in plan(window) if what in now and abs(now[what] - size) > PLAN_TOLERANCE]
 
 
 def _tick():
     """Dragging a window edge changes its size many times a second: nothing is moved until the size has been the same
-    for SETTLE seconds, and then the layout is built again once, only if a strip is off the size it had before."""
+    for SETTLE seconds. Then, if a strip has stretched since the window last kept its size, or (just after a build, or
+    when the window opens) is far from its plan, the layout is built again once for that window size."""
     if build.busy():
         return INTERVAL
     try:
@@ -118,7 +108,7 @@ def _tick():
         for w in _blenda_windows():
             key = w.as_pointer()
             size = (w.width, w.height)
-            st = _state.setdefault(key, {"size": size, "since": now_t, "base": None})
+            st = _state.setdefault(key, {"size": size, "since": now_t, "base": None, "fit_size": None})
             if not build.intact(w.screen):
                 st.update(size=size, since=now_t, base=None)  # being built or changed: measure again once whole
                 continue
@@ -128,10 +118,12 @@ def _tick():
                 continue
             if now_t - st["since"] < SETTLE:
                 continue
-            if st["base"] is not None and stretched(st["base"], now):
-                st["base"] = None
-                fit(w, lambda w=w, st=st: _fitted(w, st))
-            else:
+            base = st["base"]
+            stretched_now = bool(stretched(base, now)) if base is not None else (
+                bool(off_plan(w, now)) and st["fit_size"] != size)
+            if stretched_now and fit(w):
+                st["base"], st["fit_size"] = None, size       # built for this window size: not again until it changes
+            elif not stretched_now:
                 st["base"] = now                              # settled and as before: follow edges the user dragged
     except (ReferenceError, RuntimeError, AttributeError) as ex:
         print("Blenda 4D: strip sizes", ex)
