@@ -243,6 +243,62 @@ def coords_steps(window, on):
         a.tag_redraw()
 
 
+_coords_shown = [True]       # used when the add-on's preferences cannot be read (run from a checkout in tests)
+
+
+def coords_shown():
+    try:
+        from . import settings
+        return settings.get().coords
+    except (KeyError, AttributeError):
+        return _coords_shown[0]
+
+
+def set_coords_shown(on):
+    _coords_shown[0] = on
+    try:
+        from . import settings
+        settings.get().coords = on
+    except (KeyError, AttributeError):
+        pass
+
+
+def coords_strip():
+    """The Coordinate Manager strip is part of the layout while its module (coord_manager.py) is loaded and the
+    timeline's axes button has not hidden it."""
+    return "COORDS" in roles.ROLE_FLAGS and coords_shown()
+
+
+def to_top(window, area):
+    """Scroll an area's panel back to its top (a split that made it shorter leaves it scrolled part way down)."""
+    try:
+        with _ov(window, area):
+            bpy.ops.view2d.scroll_up(deltay=100000)
+    except RuntimeError:
+        pass
+
+
+def coords_steps(window, on):
+    """Show or hide the Coordinate Manager under the Attribute Manager, leaving every other area where it is."""
+    screen = window.screen
+    if on:
+        attrs = roles.areas(screen, "ATTRIBUTES")
+        if attrs and not roles.areas(screen, "COORDS"):
+            tl = next((a for a in screen.areas if a.type == "DOPESHEET_EDITOR"), None)
+            height = tl.height if tl is not None else px(TIMELINE_PX) + 26
+            cm = yield from split(window, attrs[0], "HORIZONTAL", height + EDGE, "BOTTOM")
+            yield from make_role(window, cm, "COORDS")
+            for a in roles.areas(screen, "ATTRIBUTES"):
+                to_top(window, a)
+    else:
+        for a in roles.areas(screen, "COORDS"):           # its room goes back to the Attribute Manager above it
+            with _ov(window, a):
+                bpy.ops.screen.area_close()
+        yield
+    for a in screen.areas:
+        a.tag_redraw()
+
+
 def intact(screen):
     """The Standard layout is all there (each strip once, a viewport and the timeline): nothing to rebuild."""
     if any(len(roles.areas(screen, r)) != 1 for r in CORE):
