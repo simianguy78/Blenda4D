@@ -1112,6 +1112,8 @@ class BLENDA4D_PT_attributes(roles.RolePanel, bpy.types.Panel):
         layout = self.layout
         wm = context.window_manager
         manager_title(layout, "Attributes", right_tabs="b4d_right_tab")
+        if wm.b4d_right_tab == "LAYERS":
+            return draw_layers(layout, context)
         if wm.b4d_right_tab == "VARIATIONS":
             return draw_variations(layout, context)
         bar = layout.row(align=True)
@@ -1154,6 +1156,91 @@ class BLENDA4D_PT_attributes(roles.RolePanel, bpy.types.Panel):
         layout.label(text=title)
         col = AttrColumn(layout.column())
         (page or PAGES.get(tab, lambda c, o: None))(col, ob)
+
+
+# --- Layers: the scene's collections, one row each ----------------------------------------------------------------
+def layer_rows(layer_collection, depth=0):
+    """(layer collection, depth) of every layer under the scene's own collection, in order."""
+    for child in layer_collection.children:
+        yield child, depth
+        yield from layer_rows(child, depth + 1)
+
+
+def _move_objects(collection, objects):
+    for ob in objects:
+        for c in list(ob.users_collection):
+            c.objects.unlink(ob)
+        collection.objects.link(ob)
+
+
+class BLENDA4D_OT_layer_new(bpy.types.Operator):
+    bl_idname = "blenda4d.layer_new"
+    bl_label = "New Layer"
+    bl_description = "Add a layer to the scene (Blender: a new collection); the selected objects move into it"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        col = bpy.data.collections.new("Layer")
+        context.scene.collection.children.link(col)
+        _move_objects(col, list(context.selected_objects))
+        return {"FINISHED"}
+
+
+class BLENDA4D_OT_layer_assign(bpy.types.Operator):
+    bl_idname = "blenda4d.layer_assign"
+    bl_label = "Move Selected Here"
+    bl_description = "Move the selected objects into this layer"
+    bl_options = {"REGISTER", "UNDO"}
+    name: bpy.props.StringProperty(options={"SKIP_SAVE"})
+
+    def execute(self, context):
+        col = bpy.data.collections.get(self.name)
+        if col is None:
+            return {"CANCELLED"}
+        _move_objects(col, list(context.selected_objects))
+        return {"FINISHED"}
+
+
+class BLENDA4D_OT_layer_select(bpy.types.Operator):
+    bl_idname = "blenda4d.layer_select"
+    bl_label = "Select Layer's Objects"
+    bl_description = "Select the objects in this layer"
+    bl_options = {"REGISTER", "UNDO"}
+    name: bpy.props.StringProperty(options={"SKIP_SAVE"})
+
+    def execute(self, context):
+        col = bpy.data.collections.get(self.name)
+        if col is None:
+            return {"CANCELLED"}
+        for ob in context.view_layer.objects:
+            ob.select_set(False)
+        for ob in col.all_objects:
+            if ob.name in context.view_layer.objects:
+                ob.select_set(True)
+        return {"FINISHED"}
+
+
+def draw_layers(layout, context):
+    top = layout.row(align=True)
+    top.alignment = "LEFT"
+    top.operator("blenda4d.layer_new", text="New Layer", icon="ADD")
+    layout.separator(factor=0.4)
+    rows = list(layer_rows(context.view_layer.layer_collection))
+    if not rows:
+        layout.label(text="No layers yet: New Layer groups the selected objects.")
+        return
+    col = layout.column(align=True)
+    for lc, depth in rows:
+        row = col.row(align=True)
+        if depth:
+            row.separator(factor=2.0 * depth)
+        row.prop(lc.collection, "name", text="", emboss=False, icon="OUTLINER_COLLECTION")
+        row.prop(lc, "hide_viewport", text="", icon_only=True, emboss=False)
+        row.prop(lc.collection, "hide_render", text="", icon_only=True, emboss=False)
+        o = row.operator("blenda4d.layer_select", text="", icon="RESTRICT_SELECT_OFF", emboss=False)
+        o.name = lc.collection.name
+        o = row.operator("blenda4d.layer_assign", text="", icon="IMPORT", emboss=False)
+        o.name = lc.collection.name
 
 
 def draw_variations(layout, context):
@@ -1288,7 +1375,7 @@ class BLENDA4D_PT_assets(roles.RolePanel, bpy.types.Panel):
             b.prop_enum(wm, "b4d_ab_tab", tab, text=label, icon=icon)
 
 
-classes = (BLENDA4D_OT_am_tab, BLENDA4D_OT_om_look_through, BLENDA4D_OT_size_step, BLENDA4D_OT_om_delete, BLENDA4D_OT_om_solo, BLENDA4D_OT_om_scroll_active, BLENDA4D_OT_om_select, BLENDA4D_OT_om_drag, BLENDA4D_OT_om_rename, BLENDA4D_OT_om_fold, BLENDA4D_OT_om_expand, BLENDA4D_OT_group, BLENDA4D_OT_new_material,
+classes = (BLENDA4D_OT_am_tab, BLENDA4D_OT_layer_new, BLENDA4D_OT_layer_assign, BLENDA4D_OT_layer_select, BLENDA4D_OT_om_look_through, BLENDA4D_OT_size_step, BLENDA4D_OT_om_delete, BLENDA4D_OT_om_solo, BLENDA4D_OT_om_scroll_active, BLENDA4D_OT_om_select, BLENDA4D_OT_om_drag, BLENDA4D_OT_om_rename, BLENDA4D_OT_om_fold, BLENDA4D_OT_om_expand, BLENDA4D_OT_group, BLENDA4D_OT_new_material,
            BLENDA4D_OT_mat_pick, BLENDA4D_OT_mat_tag, *OM_MENUS, *AM_MENUS, *MM_MENUS, *AB_MENUS,
            *(menus.make_more(m) for m in (OM_MENUS, AM_MENUS, MM_MENUS)),
            BLENDA4D_PT_objects, BLENDA4D_PT_om_bar, BLENDA4D_PT_om_head, BLENDA4D_PT_attributes, BLENDA4D_PT_materials, BLENDA4D_PT_assets)
@@ -1351,7 +1438,8 @@ def register():
                                             default=0.0, min=0.0, max=100.0, subtype="PERCENTAGE", precision=0,
                                             update=_om_zoom)
     W.b4d_am_tab = bpy.props.EnumProperty(description='The page of settings the Attribute Manager shows', items=_tab_items, name="Page")
-    W.b4d_right_tab = bpy.props.EnumProperty(description='Show the Attribute Manager or the Variations', items=[("ATTRIBUTES", "Attributes", "The selected object's, tag's or material's settings"),
+    W.b4d_right_tab = bpy.props.EnumProperty(description='Show the Attribute Manager, the Layers or the Variations', items=[("ATTRIBUTES", "Attributes", "The selected object's, tag's or material's settings"),
+                                                ("LAYERS", "Layers", "The scene's layers: show, hide and select the objects in each"),
                                                 ("VARIATIONS", "Variations", "Versions of the scene to switch between")])
     W.b4d_material = bpy.props.StringProperty(description='The material selected in the Material Manager', )
     W.b4d_am_subject = bpy.props.StringProperty(description='What the Attribute Manager shows besides the object: a tag or a material', )      # what the Attribute Manager shows besides the object (a tag)
