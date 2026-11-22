@@ -49,8 +49,16 @@ def _get_size(self):
 
 
 def _set_size(self, value):
-    if self.type == "MESH":
-        self.dimensions = from_shown(value)
+    """Stretch the object until it is this size. Blender reads an object's size with its parents' scale included but
+    sets it as if they had none, so scale by the ratio of the size wanted to the size it has: right under any parent."""
+    if self.type != "MESH":
+        return
+    want, have = from_shown(value), self.dimensions
+    s = list(self.scale)
+    for i in range(3):
+        if have[i] > 1e-9:
+            s[i] *= want[i] / have[i]
+    self.scale = s
 
 
 def register():

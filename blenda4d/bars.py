@@ -311,6 +311,9 @@ def timeline_header(self, context):
     layout.prop(scene.tool_settings, "use_keyframe_insert_auto", text="", icon="REC")
     layout.separator_spacer()
     layout.prop(scene, "frame_end", text="")
+    if "COORDS" in roles.ROLE_FLAGS:                      # the Coordinate Manager's show / hide button
+        from . import coord_manager
+        coord_manager.toggle_button(layout, context)
 
 
 def properties_header(self, context):

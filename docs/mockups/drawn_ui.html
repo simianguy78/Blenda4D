@@ -102,11 +102,22 @@ h += `<div class="area" style="left:${TL}px;top:852px;width:${1180-TL}px;height:
   <div class="row" style="height:34px;padding:0 10px;gap:10px">
     <div class="field" style="width:110px">1</div><div style="flex:1"></div>
     <div class="group">${["REW","FRAME_PREV","PLAY_REVERSE","PLAY","FRAME_NEXT","FF"].map(n=>`<div class="btn" style="width:26px">${I(n)}</div>`).join("")}</div>
-    <div class="field" style="width:100px">1</div><div class="btn" style="width:26px">${I("REC")}</div><div style="flex:1"></div><div class="field" style="width:110px">250</div></div>
+    <div class="field" style="width:100px">1</div><div class="btn" style="width:26px">${I("REC")}</div><div style="flex:1"></div><div class="field" style="width:110px">250</div><div class="btn on" style="width:26px">${I("EMPTY_ARROWS")}</div></div>
   <div style="position:relative;height:72px;margin:0 10px;background:#232323;border-radius:4px">` +
   Array.from({length:26},(_,i)=>`<div style="position:absolute;left:${i*4.1+0.6}%;top:0;bottom:0;border-left:1px solid #333"></div>` + (i%3==0?`<span style="position:absolute;left:calc(${i*4.1+0.6}% + 4px);top:4px;font-size:12px;color:var(--dim)">${i*10||1}</span>`:``)).join("") +
   `<div style="position:absolute;left:2%;top:0;bottom:0;border-left:2px solid #4772b3"></div><div style="position:absolute;left:calc(2% - 12px);top:3px;width:24px;height:18px;background:#4772b3;border-radius:4px;font-size:12px;text-align:center;color:#fff">1</div></div></div>`;
 
+// ---------------------------------------------------------------- Coordinate Manager (under the Attribute Manager, level with the timeline)
+{
+  const CM = {cube:[["-200 cm","0","200 cm"],["100 cm","0","200 cm"],["0 cm","0","200 cm"]],
+              cloner:[["0 cm","0","600 cm"],["100 cm","0","200 cm"],["0 cm","0","400 cm"]],
+              light:[["300 cm","45","100 cm"],["600 cm","-30","100 cm"],["-400 cm","0","100 cm"]]}[SEL] || [["0","0","0"],["0","0","0"],["0","0","0"]];
+  h += `<div class="area" style="left:1240px;top:852px;width:456px;height:114px;padding:4px 8px">
+    <div class="row" style="height:24px;gap:6px">${I("COLLAPSEMENU")}<div style="flex:1"></div><div class="btn" style="width:70px">Reset</div>
+      <div class="drop" style="width:80px">Local</div><div class="drop" style="width:80px">Size</div></div>` +
+    CM.map((r,i)=>`<div class="row" style="height:24px;gap:6px"><span style="width:16px;color:var(--dim)">${"XYZ"[i]}</span>` +
+      r.map(v=>`<div class="field" style="flex:1">${v}</div>`).join("") + `</div>`).join("") + `</div>`;
+}
 // ---------------------------------------------------------------- Asset Browser (left of the viewport)
 if (AB) {
   const S = (n)=>`<span style="width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center">${I(n)}</span>`;
@@ -175,7 +186,7 @@ const PAGES = {
    ["Color",{col:"#fff5e6"}],["Use Temperature",{c:false}],["Intensity",{s:"100 %",p:50}],["Type",{d:"Area"}],["Shadow",{d:"Area"}],["Visible Light",{d:"None"}],
    ["No Illumination",{c:false}],["Ambient Illumination",{c:false}],["Diffuse",{c:true}],["Specular",{c:true}]]}};
 const pg = PAGES[SEL];
-h += `<div class="area" style="left:1240px;top:470px;width:456px;height:496px">
+h += `<div class="area" style="left:1240px;top:470px;width:456px;height:378px">
   <div class="row" style="height:30px;background:var(--panel2);padding-left:6px"><div class="tab on">Attributes</div><div class="tab">Variations</div></div>
   <div class="row menu" style="height:32px;padding-left:8px">${I("COLLAPSEMENU","margin-right:6px")}<span>Mode</span><span>Edit</span><span>User Data</span><div style="flex:1"></div>
     <div class="row" style="gap:10px;margin-right:12px">${I("BACK")}${I("FORWARD")}${I("VIEWZOOM")}${I("FILTER")}${I("LOCKED")}</div></div>
