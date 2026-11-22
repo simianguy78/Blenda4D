@@ -139,10 +139,49 @@ def splash(on):
             os.environ[key] = old
 
 
+def _is_startup_cube(ob):
+    """Blender's untouched startup cube: a plain 8-point mesh at the origin with no modifiers or parent."""
+    me = ob.data
+    return (ob.type == "MESH" and ob.name == "Cube" and me.name == "Cube" and len(me.vertices) == 8
+            and not ob.modifiers and ob.parent is None and "b4d_type" not in ob
+            and all(abs(v) < 1e-6 for v in ob.location) and all(abs(v) < 1e-6 for v in ob.rotation_euler)
+            and all(abs(v - 1.0) < 1e-6 for v in ob.scale))
+
+
+def swap_startup_cube(context=None):
+    """In an unsaved file that still holds only Blender's startup scene (Cube, Light, Camera), Blenda's own Cube
+    Object takes the place of the startup cube, so it has Size, Segments and Fillet settings from the start. Returns
+    the new object, or None when the scene is not that untouched startup scene."""
+    context = context or bpy.context
+    if bpy.data.filepath or {o.name for o in bpy.data.objects} != {"Cube", "Light", "Camera"}:
+        return None
+    old = bpy.data.objects["Cube"]
+    if not _is_startup_cube(old) or not old.users_collection:
+        return None
+    layer = context.view_layer
+    was_active = layer.objects.active is old
+    was_selected = old.select_get() if old.name in layer.objects else False
+    collection = old.users_collection[0]
+    mesh = old.data
+    bpy.data.objects.remove(old)
+    if mesh.users == 0:
+        bpy.data.meshes.remove(mesh)
+    ob = primitives.add_primitive(context, "cube", name="Cube", collection=collection)
+    if was_selected:
+        ob.select_set(True)
+    if was_active:
+        layer.objects.active = ob
+    return ob
+
+
 def set_mode(on, forget=False):
     splash(on)
     if on and not _on[0]:
         _register_mode()
+        try:
+            swap_startup_cube()
+        except Exception as ex:
+            print("Blenda 4D: could not swap the startup cube", ex)
         theme.apply()
         _screen_chrome(True)
         for scene in bpy.data.scenes:

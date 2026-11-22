@@ -13,7 +13,7 @@ from . import roles
 
 DOC_TABS_PX = 30
 PALETTE_PX = 40               # one row of icon buttons (bars.PALETTE_SCALE) and the panel's margins
-TIMELINE_PX = 64
+TIMELINE_PX = 82                # with the header: tall enough for the Coordinate Manager beside it (header row + X, Y, Z rows)
 TOOL_ZOOM = {"CREATE": 8}     # zoom steps (as Ctrl+scroll): larger icons, boxes stay square
 MODES_PX = 55                 # one column of square buttons (bars.MODES_SCALE) and the panel's margins: wide enough
                               # that the tool icons, which Blender draws about 5 px right of centre, stay inside
@@ -22,7 +22,6 @@ STRIP_ZOOM = 0               # the create column is drawn at its own size (strip
 MANAGERS_PX = 330
 MATERIALS_PX = 230
 MM_BAR_PX = 30
-OM_HEAD_PX = 88               # the Object Manager's title, menus and tool row (unzoomed; the Size slider zooms only the rows)
 ASSETS_PX = 420
 EDGE = 3
 
@@ -282,13 +281,26 @@ def steps(window, materials=False, assets=False):
     from . import render_settings
     render_settings.show_view(screen)                     # Render Settings in the viewport's place: viewport back first
     # 1. everything back into one viewport
-    for _ in range(40):
+    for _ in range(60):
         extra = [a for a in screen.areas if a.type != "VIEW_3D"] + \
                 [a for a in screen.areas if a.type == "VIEW_3D" and a != biggest_view(screen)]
         if not extra:
             break
-        with _ov(window, extra[0]):
-            bpy.ops.screen.area_close()
+        # a window that shrank leaves the tools column very narrow, and Blender then refuses to close a strip that
+        # runs across it ("A narrow vertical area interferes"): close the narrow areas first, and when one close is
+        # refused, try the next area instead of the same one again
+        extra.sort(key=lambda a: a.width >= px(MODES_PX))
+        count = len(screen.areas)
+        for a in extra:
+            try:
+                with _ov(window, a):
+                    bpy.ops.screen.area_close()
+            except RuntimeError:
+                continue
+            if len(screen.areas) < count:
+                break
+        else:
+            raise RuntimeError("no area could be closed")
         yield
     view = biggest_view(screen)
     hdr = _region(view, "HEADER").height if _region(view, "HEADER") else 26
@@ -329,8 +341,6 @@ def steps(window, materials=False, assets=False):
         objs = sorted(roles.areas(screen, "OBJECTS") + roles.areas(screen, "OM_BAR"), key=lambda a: a.y)
         if len(roles.areas(screen, "OBJECTS")) == 2:       # the split handed back the other half
             yield from make_role(window, min(roles.areas(screen, "OBJECTS"), key=lambda a: a.y), "OM_BAR")
-    # the Object Manager's title, menus, search and tool row stay inside the Objects area (one section, not a strip
-    # of its own: managers.BLENDA4D_PT_objects draws them when no OM_HEAD area exists)
     # 3. the viewport and timeline lose Blender's own chrome; the toolbar strip moves to the viewport's right edge
     for a in screen.areas:
         if a.type == "VIEW_3D":

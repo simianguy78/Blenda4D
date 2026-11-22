@@ -39,7 +39,9 @@ def floor_material():
 
 def click_swatch():
     r = ui.om_region()
-    x, y = r.x + r.width - 12, ui.row_y(ui.row_index("Floor"))
+    from blenda4d import managers                       # the tags sit just right of the separator after the check
+    share, _w = managers._name_column(bpy.context, r, managers.visible_rows(bpy.context))
+    x, y = r.x + int(share * r.width + 1.2 * managers.row_height()), ui.row_y(ui.row_index("Floor"))
     ui.ev("MOUSEMOVE", "NOTHING", x, y)
     ui.ev("LEFTMOUSE", "PRESS", x, y)
     ui.ev("LEFTMOUSE", "RELEASE", x, y)

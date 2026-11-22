@@ -3,16 +3,17 @@
 
 Blender stretches every area in proportion when a window changes size, so a strip built 30 px tall in a small window
 grows with it (and a file saved in one window opens stretched in another). Blender only lets an edge be moved by hand
-(its edge-move operator refuses to run from a timer), so whenever a Blenda window's size changes and a strip has
-grown or shrunk with it, the layout is built again at its exact sizes, with the same steps that built it first.
-Edges the user drags while the window keeps its size are left alone."""
+(its edge-move operator refuses to run from a timer), so once a Blenda window has kept a new size for a moment and a
+strip has grown or shrunk with it, the layout is built again at its exact sizes, with the same steps that built it
+first. Edges the user drags while the window keeps its size are left alone."""
+import time
+
 import bpy
 
 from . import build, roles
 
 INTERVAL = 0.5
 TOLERANCE = 3                 # pixels a strip may be off before it is moved
-_seen = {}                    # window pointer -> ((width, height), sizes()) last measured
 
 
 def _timeline_height(window):
@@ -37,7 +38,6 @@ def plan(window):
         ("PALETTE", p(build.PALETTE_PX), "BOTTOM"),
         ("MODES", p(build.MODES_PX), "RIGHT"),
         ("TIMELINE", tl, "TOP"),
-        ("OM_HEAD", p(build.OM_HEAD_PX), "BOTTOM"),
         ("OM_BAR", p(build.MM_BAR_PX), "TOP"),
         ("MM_BAR", p(build.MM_BAR_PX), "TOP"),
         ("AB_BAR", p(build.MM_BAR_PX), "TOP"),
@@ -83,30 +83,54 @@ def _blenda_windows():
             yield w
 
 
+SETTLE = 1.0                  # seconds a window must keep its size before its strips are put back
+_state = {}                   # window pointer -> {"size", "since", "base"}: size now, when it last changed, strip
+#                               sizes measured while the window last kept its size
+
+
+PLAN_TOLERANCE = 15           # px a strip may be off its planned size after a build (area edges, rounding)
+
+
+def off_plan(window, now):
+    """Strips whose size is further from the plan than a build leaves them."""
+    return [what for what, size, _edge in plan(window) if what in now and abs(now[what] - size) > PLAN_TOLERANCE]
+
+
 def _tick():
+    """Dragging a window edge changes its size many times a second: nothing is moved until the size has been the same
+    for SETTLE seconds. Then, if a strip has stretched since the window last kept its size, or (just after a build, or
+    when the window opens) is far from its plan, the layout is built again once for that window size."""
     if build.busy():
         return INTERVAL
     try:
+        now_t = time.monotonic()
         for w in _blenda_windows():
             key = w.as_pointer()
             size = (w.width, w.height)
+            st = _state.setdefault(key, {"size": size, "since": now_t, "base": None, "fit_size": None})
             if not build.intact(w.screen):
-                _seen.pop(key, None)                      # being built or changed: measure again once it is whole
+                st.update(size=size, since=now_t, base=None)  # being built or changed: measure again once whole
                 continue
             now = sizes(w)
-            last = _seen.get(key)
-            if last is not None and last[0] != size and stretched(last[1], now):
-                _seen.pop(key, None)                      # measured again after the build
-                fit(w)
-            else:
-                _seen[key] = (size, now)                  # same window size: follow edges the user dragged
+            if st["size"] != size:
+                st["size"], st["since"] = size, now_t         # still being resized (or just was)
+                continue
+            if now_t - st["since"] < SETTLE:
+                continue
+            base = st["base"]
+            stretched_now = bool(stretched(base, now)) if base is not None else (
+                bool(off_plan(w, now)) and st["fit_size"] != size)
+            if stretched_now and fit(w):
+                st["base"], st["fit_size"] = None, size       # built for this window size: not again until it changes
+            elif not stretched_now:
+                st["base"] = now                              # settled and as before: follow edges the user dragged
     except (ReferenceError, RuntimeError, AttributeError) as ex:
         print("Blenda 4D: strip sizes", ex)
     return INTERVAL
 
 
 def register():
-    _seen.clear()
+    _state.clear()
     if not bpy.app.background and not bpy.app.timers.is_registered(_tick):
         bpy.app.timers.register(_tick, first_interval=INTERVAL, persistent=True)
 
@@ -114,4 +138,4 @@ def register():
 def unregister():
     if bpy.app.timers.is_registered(_tick):
         bpy.app.timers.unregister(_tick)
-    _seen.clear()
+    _state.clear()

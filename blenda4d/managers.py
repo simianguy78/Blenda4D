@@ -203,9 +203,9 @@ class BLENDA4D_OT_group(bpy.types.Operator):
 
 
 TOP_LEVEL = "\x00top"
-ROWS_TOP_APART = 0.35        # with the title, menus and tools in their own strip above (OM_HEAD)
-ROWS_TOP_UNITS = 4.40        # where the first object row starts, in row heights below the top of the panel area (measured
-#                               on Blender 5.2 and 5.3, Mac, Windows and Linux, at every Size: icon centres sit at 4.40 + i + 0.5)
+ROWS_TOP_APART = 0.35        # kept for layouts that still have a separate head strip
+ROWS_TOP_UNITS = 2.88        # where the first object row starts, in row heights below the top of the panel area (measured
+#                               on Blender 5.2, Windows, 2x, Size 0/50/100, one panel with the tab and menu row: icon centres sit at 2.88 + i + 0.5)
 STRIPE = (0.02, 0.02, 0.02, 1.0)      # added to every other Object Manager row: +5 grey levels, as in the original (Joseph, Nov 19)
 
 
@@ -229,7 +229,8 @@ def visible_rows(context):
 
 
 def head_apart(screen):
-    return any(roles.role(a) == "OM_HEAD" for a in screen.areas)
+    """The Object Manager's title, menus and tools are drawn at the top of its own panel (one panel, not two)."""
+    return False
 
 
 def rows_top(screen=None):
@@ -529,6 +530,30 @@ class BLENDA4D_PT_om_bar(roles.RolePanel, bpy.types.Panel):
         size_bar(row, "b4d_om_zoom", step=10)
 
 
+def _name_column(context, region, rows):
+    """(share, layout width): the share of an Object Manager row taken by the name and the dots and check next to it.
+    The tags go to its right, behind a separator."""
+    import blf
+    try:
+        v2d = region.view2d
+        zoom = (v2d.view_to_region(0, 0, clip=False)[1] - v2d.view_to_region(0, -1000, clip=False)[1]) / 1000
+    except (AttributeError, ZeroDivisionError):
+        zoom = 1.0
+    width = region.width / max(zoom, 0.01)
+    h = row_height()
+    style = context.preferences.ui_styles[0].widget
+    blf.size(0, style.points * context.preferences.system.ui_scale)
+    widest = max((h * (2.4 + 0.8 * d) + blf.dimensions(0, ob.name)[0] for ob, d in rows), default=h * 3)
+    left = widest + STATUS_ICONS * h + 1.8 * h          # a little room so the widest name is not cut short
+    return max(0.2, min(0.8, left / max(width, 1))), width
+
+
+ACTIVE_CAMERA_ICON = "SNAP_FACE_CENTER"      # a square with a dot in the middle: the scene's active camera
+STATUS_ICONS = 3            # the two dots and the check
+DIVIDER_GREY = (0.12, 0.12, 0.12, 1.0)
+DIVIDER_MARGIN = -4         # UI px (times the UI scale): puts the separator midway between the check column and the tags
+
+
 def _status_split(context, buttons):
     """The split factor that leaves exactly `buttons` icon widths (plus a little room) for the status side of a row,
     whatever the panel width and the Size (zoom)."""
@@ -560,33 +585,24 @@ def _om_menu_share():
     w = menus.panel_width()
     if not w:
         return OM_MENU_SHARE
-    need = OM_SEARCH_MIN_PX * bpy.context.preferences.system.ui_scale
+    need = OM_SEARCH_MIN_PX * bpy.context.preferences.system.ui_scale + 3 * _icon_px()
     return max(0.35, min(OM_MENU_SHARE, 1 - need / max(w, 1)))
 
 
 def draw_om_head(layout, context):
-    """The Object Manager's title, menus, search and tool row."""
-    manager_title(layout, "Objects")
+    """The top of the Object Manager's panel, above the rows: the tab, then one row with the menus, the tools and the
+    search box."""
+    manager_title(layout, "Objects", right_tabs="b4d_om_tab")
     share = _om_menu_share()
-    sp = layout.split(factor=share, align=True)           # menus on the left, the search box at the right edge
+    sp = layout.split(factor=share, align=True)           # menus on the left, tools and the search box at the right
     bar = sp.row(align=True)
     bar.label(text="", icon="COLLAPSEMENU")
     menus.menu_bar(bar, OM_MENUS, avail=menus.panel_width(share, _icon_px()))
-    sp.prop(context.window_manager, "b4d_om_search", text="", icon="VIEWZOOM", placeholder="Search")
-    tools = layout.split(factor=0.2, align=True).row(align=True)   # the tool row: scroll to the active object, solo
-    tools.operator("blenda4d.om_scroll_active", text="", icon="ZOOM_SELECTED", emboss=False)
-    tools.operator("blenda4d.om_solo", text="", icon="SELECT_INTERSECT", emboss=False,
-                   depress=_in_solo(context))
-    tools.operator("blenda4d.solo", text="", icon="HIDE_OFF", emboss=False).mode = "OFF"   # Solo Off
-
-
-class BLENDA4D_PT_om_head(roles.RolePanel, bpy.types.Panel):
-    """The Object Manager's top strip, an area of its own so the Size slider zooms only the object rows."""
-    bl_label = "Object Manager"
-    role = "OM_HEAD"
-
-    def draw(self, context):
-        draw_om_head(self.layout, context)
+    right = sp.row(align=True)
+    right.operator("blenda4d.om_scroll_active", text="", icon="ZOOM_SELECTED", emboss=False)
+    right.operator("blenda4d.om_solo", text="", icon="SELECT_INTERSECT", emboss=False, depress=_in_solo(context))
+    right.operator("blenda4d.solo", text="", icon="HIDE_OFF", emboss=False).mode = "OFF"   # Solo Off
+    right.prop(context.window_manager, "b4d_om_search", text="", icon="VIEWZOOM", placeholder="Search")
 
 
 class BLENDA4D_PT_objects(roles.RolePanel, bpy.types.Panel):
@@ -595,23 +611,24 @@ class BLENDA4D_PT_objects(roles.RolePanel, bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        if not head_apart(context.window.screen):          # a layout saved before the head had its own strip
-            draw_om_head(layout, context)
-            layout.separator(factor=0.3)
+        draw_om_head(layout, context)
         col = layout.column(align=True)
         drop = context.window_manager.b4d_om_drop
         rows = visible_rows(context)
-        tags = max((len(_tags(ob)) + (ob.type == "CAMERA") for ob, _d in rows), default=0)   # every row keeps room for the most tags,
-        split = _status_split(context, 3 + tags)                      # so the dots and checks stay in columns
+        tags = max((len(_tags(ob)) + (ob.type == "CAMERA") for ob, _d in rows), default=0)
+        share, width = _name_column(context, context.region, rows)
         for ob, depth in rows:
-            self._row(col, ob, depth, tags, split)
+            self._row(col, ob, depth, tags, share, width)
 
         if drop == TOP_LEVEL:
             col.label(text="Move to top level", icon="TRIA_UP")
 
-    def _row(self, col, ob, depth, tag_room=0, split=0.6):
-        sp = col.split(factor=split, align=True)          # name side | a fixed-width status side: a long name or a
-        row = sp.row(align=True)                          # larger Size never squeezes the dots and checks together
+    def _row(self, col, ob, depth, tag_room=0, share=0.5, width=300.0):
+        sp = col.split(factor=share, align=True)          # name, dots and check | the tags, behind a separator
+        left = sp.row(align=True)
+        status_share = max(0.05, min(0.6, (STATUS_ICONS * row_height() + 0.8 * row_height()) / max(width * share, 1)))
+        ns = left.split(factor=1 - status_share, align=True)
+        row = ns.row(align=True)
         if depth:
             row.separator(factor=1.6 * depth)
         if ob.children:
@@ -622,14 +639,17 @@ class BLENDA4D_PT_objects(roles.RolePanel, bpy.types.Panel):
         name = row.row(align=True)
         name.alignment = "LEFT"
         name.label(text=ob.name, **type_icon_kw(ob))     # a label, so a press here can start a drag (see om_drag)
+        status = ns.row(align=True)                       # next to the name, left-aligned, in a column of their own
+        status.alignment = "LEFT"
+        status.prop(ob, "hide_viewport", text="", emboss=False, icon="LAYER_ACTIVE" if not ob.hide_viewport else "LAYER_USED")
+        status.prop(ob, "hide_render", text="", emboss=False, icon="LAYER_ACTIVE" if not ob.hide_render else "LAYER_USED")
+        status.prop(ob, "b4d_enabled", text="", emboss=False, icon="CHECKMARK" if ob.b4d_enabled else "X")
         right = sp.row(align=True)
-        right.alignment = "RIGHT"
-        right.prop(ob, "hide_viewport", text="", emboss=False, icon="LAYER_ACTIVE" if not ob.hide_viewport else "LAYER_USED")
-        right.prop(ob, "hide_render", text="", emboss=False, icon="LAYER_ACTIVE" if not ob.hide_render else "LAYER_USED")
-        right.prop(ob, "b4d_enabled", text="", emboss=False, icon="CHECKMARK" if ob.b4d_enabled else "X")
+        right.alignment = "LEFT"
+        right.separator(factor=0.5)
         if ob.type == "CAMERA":                            # the camera's view switch: filled while looking through it
             right.operator("blenda4d.om_look_through", text="", emboss=False,
-                           icon="VIEW_CAMERA" if looking_through(bpy.context, ob) else "VIEW_CAMERA_UNSELECTED").name = ob.name
+                           icon=ACTIVE_CAMERA_ICON if bpy.context.scene.camera == ob else "VIEW_CAMERA_UNSELECTED").name = ob.name
         for icon, mat, slot in _tags(ob):
             if mat is not None and OM_TAG_BUTTON:
                 OM_TAG_BUTTON[0](right, ob, slot, mat)
@@ -637,8 +657,6 @@ class BLENDA4D_PT_objects(roles.RolePanel, bpy.types.Panel):
                 right.label(text="", icon_value=right.icon(mat))
             else:
                 right.label(text="", icon=icon)
-        for _ in range(tag_room - len(_tags(ob)) - (ob.type == "CAMERA")):
-            right.label(text="", icon="BLANK1")
 
 
 def _big_view(context):
@@ -715,6 +733,168 @@ def _tab_items(self, context):
     return _page_tabs(ob) if ob is not None else TABS_COMMON
 
 
+# --- Attribute Manager rows ------------------------------------------------------------------------------------------
+# Every setting on a page is one row: its keyframe marker, its name on the left, then a short number field. A number
+# with a small range is a slider across the rest of the row; switches, lists and text fill the row.
+LABEL_SHARE = 0.42           # the name's share of the row (long names such as "Fillet Subdivision" fit)
+FIELD_UNITS = 6              # a number field's width, in Blender's widget units
+SLIDER_SPAN = 1000           # a number whose soft range is no wider than this becomes a slider
+_RAW_KW = ("expand", "icon_only", "toggle")
+
+
+def _raw(kw):
+    """Buttons that carry their own text (expanded lists, icon buttons, toggles) keep Blender's own drawing."""
+    return any(kw.get(k) for k in _RAW_KW) or kw.get("emboss") is False
+
+
+def _rna_prop(owner, attr):
+    try:
+        return owner.bl_rna.properties[attr]
+    except (AttributeError, KeyError, TypeError):
+        return None
+
+
+def _bounded(p):
+    if p is None or p.type not in ("INT", "FLOAT"):
+        return False
+    lo, hi = p.soft_min, p.soft_max
+    return abs(lo) < 1e9 and abs(hi) < 1e9 and 0 < hi - lo <= SLIDER_SPAN
+
+
+def attr_row(layout, owner, attr, label=None, index=-1, active=True, slider=None, **kw):
+    """One Attribute Manager row: keyframe marker | name | field (and slider). Returns the row."""
+    p = _rna_prop(owner, attr)
+    if label is None:
+        label = p.name if p is not None else attr
+    while isinstance(layout, (AttrColumn, AttrRow)):    # draw straight into Blender's layout
+        layout = layout._lay if isinstance(layout, AttrColumn) else layout._parent
+    row = layout.row(align=False)
+    row.use_property_split = False
+    row.use_property_decorate = False
+    if not active:
+        row.active = False
+    try:
+        row.prop_decorator(owner, attr, index=index)
+    except (TypeError, RuntimeError):
+        row.label(text="", icon="BLANK1")
+    sp = row.split(factor=LABEL_SHARE, align=True)
+    sp.label(text=label)
+    rest = sp.row(align=True)
+    if _raw(kw):                                         # buttons that carry their own text
+        rest.prop(owner, attr, index=index, **kw)
+        return row
+    kw.pop("toggle", None)
+    number = p is not None and p.type in ("INT", "FLOAT") and p.subtype not in ("COLOR", "COLOR_GAMMA")
+    if slider is None:
+        slider = _bounded(p)
+    if number and not slider:
+        rest.alignment = "LEFT"                        # a short field, as wide as any number needs
+        f = rest.row(align=True)
+        f.ui_units_x = FIELD_UNITS
+        f.prop(owner, attr, index=index, text="", **kw)
+    else:
+        rest.prop(owner, attr, index=index, text="", slider=bool(slider and number), **kw)
+    return row
+
+
+class AttrColumn:
+    """A page's column: settings drawn with prop() become Attribute Manager rows (attr_row), everything else is the
+    plain Blender layout. Pages written for a plain column work unchanged; a sub-column is one of these again."""
+
+    def __init__(self, layout):
+        object.__setattr__(self, "_lay", layout)
+
+    def prop(self, data, property, text=None, index=-1, **kw):
+        p = _rna_prop(data, property)
+        vector = (p is not None and index == -1 and getattr(p, "is_array", False) and p.array_length in (2, 3, 4)
+                  and p.subtype not in ("COLOR", "COLOR_GAMMA") and p.type in ("INT", "FLOAT", "BOOLEAN")
+                  and not _raw(kw))
+        if vector:                                     # one row per axis, as the Coord. page shows them
+            name = text if text is not None else p.name
+            sub = self._lay.column(align=True)
+            for i in range(p.array_length):
+                attr_row(sub, data, property, label=f"{name} . {'XYZW'[i]}", index=i, **kw)
+            return None
+        label = text if text is not None else None
+        if label == "" and p is not None and p.type == "BOOLEAN":
+            label = None
+        return attr_row(self._lay, data, property, label=label, index=index, **kw)
+
+    def column(self, **kw):
+        return AttrColumn(self._lay.column(**kw))
+
+    def row(self, **kw):
+        return AttrRow(self._lay, kw)
+
+    def __getattr__(self, name):
+        return getattr(self._lay, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._lay, name, value)
+
+
+class AttrRow:
+    """A page's row: a setting drawn into it becomes an Attribute Manager row (with the row's greying); buttons and
+    labels drawn into it share one plain Blender row, as the page laid them out."""
+
+    def __init__(self, parent, kw):
+        d = self.__dict__
+        d["_parent"], d["_kw"], d["_set"], d["_col"], d["_row"] = parent, kw, {}, None, None
+
+    def _apply(self, lay):
+        for k, v in self._set.items():
+            if k != "alignment" or lay is self._row:
+                setattr(lay, k, v)
+        return lay
+
+    def prop(self, data, property, text=None, index=-1, **kw):
+        if self._col is None:
+            self.__dict__["_col"] = self._apply(self._parent.column(align=True))
+        return AttrColumn(self._col).prop(data, property, text=text, index=index, **kw)
+
+    def __getattr__(self, name):
+        if name in self._set:
+            return self._set[name]
+        if self._row is None:
+            self.__dict__["_row"] = self._apply(self._parent.row(**self._kw))
+        return getattr(self._row, name)
+
+    def __setattr__(self, name, value):
+        self._set[name] = value
+        for lay in (self._col, self._row):
+            if lay is not None:
+                setattr(lay, name, value)
+
+
+class BLENDA4D_OT_am_tab(bpy.types.Operator):
+    bl_idname = "blenda4d.am_tab"
+    bl_label = "Page"
+    bl_options = {"INTERNAL"}
+    key: bpy.props.StringProperty()
+    label: bpy.props.StringProperty()
+
+    @classmethod
+    def description(cls, context, props):
+        return f"Show the {props.label} page"
+
+    def execute(self, context):
+        context.window_manager.b4d_am_tab = self.key
+        return {"FINISHED"}
+
+
+def page_tabs(layout, ob, current):
+    """The page tabs: short buttons from the left, the shown page filled; more than five wrap onto rows of four."""
+    tabs = _page_tabs(ob)
+    per = 4 if len(tabs) > 5 else len(tabs)
+    col = layout.column(align=False)
+    for start in range(0, len(tabs), max(per, 1)):
+        row = col.row(align=False)
+        row.alignment = "LEFT"
+        for key, label, _d in tabs[start:start + per]:
+            o = row.operator("blenda4d.am_tab", text=label, depress=key == current)
+            o.key, o.label = key, label
+
+
 def _vec(col, data, prop, label, axes="XYZ"):
     sub = col.column(align=True)
     for i, a in enumerate(axes):
@@ -776,7 +956,7 @@ def page_primitive(col, ob, kind):
         if sname not in values:
             continue
         owner, attr = values[sname]
-        row = col.row(align=True)
+        row = col.column(align=True)
         switch = _NEEDS.get(sname)
         if switch and switch in values:
             o2, a2 = values[switch]
@@ -785,7 +965,7 @@ def page_primitive(col, ob, kind):
             except (AttributeError, TypeError):
                 pass
         if stype == "VECTOR":
-            sub = col.column(align=True)
+            sub = row.column(align=True)
             for i, axis in enumerate("XYZ"):
                 sub.prop(owner, attr, index=i, text=f"{sname} . {axis}")
         else:
@@ -951,6 +1131,8 @@ class BLENDA4D_PT_attributes(roles.RolePanel, bpy.types.Panel):
         layout = self.layout
         wm = context.window_manager
         manager_title(layout, "Attributes", right_tabs="b4d_right_tab")
+        if wm.b4d_right_tab == "LAYERS":
+            return draw_layers(layout, context)
         if wm.b4d_right_tab == "VARIATIONS":
             return draw_variations(layout, context)
         bar = layout.row(align=True)
@@ -977,16 +1159,11 @@ class BLENDA4D_PT_attributes(roles.RolePanel, bpy.types.Panel):
         label = (kinds.KINDS[own]["label"] if own else
                  (primitives.PRIMS[kind][1] + " Object") if kind else TYPE_LABEL.get(ob.type, "Object"))
         head.label(text=f"{label} [{ob.name}]", **type_icon_kw(ob))
-        if len(_page_tabs(ob)) > 5:                       # many pages: tabs wrap onto two rows of four
-            tg = layout.grid_flow(row_major=True, columns=4, even_columns=True, align=True)
-            for key, label, _d in _page_tabs(ob):
-                tg.prop_enum(wm, "b4d_am_tab", key, text=label)
-        else:
-            layout.row(align=True).prop(wm, "b4d_am_tab", expand=True)
         tab = wm.b4d_am_tab
         tabs = [t[0] for t in _page_tabs(ob)]
         if tab not in tabs:
             tab = "OBJECT" if "OBJECT" in tabs else tabs[min(2, len(tabs) - 1)]
+        page_tabs(layout, ob, tab)
         layout.separator(factor=0.5)
         page = kinds.KINDS[own]["pages"].get(tab) if own else None
         if page is None and ob.type == "CAMERA" and tab in CAMERA_PAGES:
@@ -996,10 +1173,93 @@ class BLENDA4D_PT_attributes(roles.RolePanel, bpy.types.Panel):
             "BASIC": "Basic Properties", "COORD": "Coordinates", "OBJECT": "Object Properties", "PHONG": "Phong",
             "DETAILS": "Details", "SHADOW": "Shadow"}.get(tab, dict((t[0], t[1]) for t in _page_tabs(ob)).get(tab, tab))
         layout.label(text=title)
-        col = layout.column()
-        col.use_property_split = True
-        col.use_property_decorate = True
+        col = AttrColumn(layout.column())
         (page or PAGES.get(tab, lambda c, o: None))(col, ob)
+
+
+# --- Layers: the scene's collections, one row each ----------------------------------------------------------------
+def layer_rows(layer_collection, depth=0):
+    """(layer collection, depth) of every layer under the scene's own collection, in order."""
+    for child in layer_collection.children:
+        yield child, depth
+        yield from layer_rows(child, depth + 1)
+
+
+def _move_objects(collection, objects):
+    for ob in objects:
+        for c in list(ob.users_collection):
+            c.objects.unlink(ob)
+        collection.objects.link(ob)
+
+
+class BLENDA4D_OT_layer_new(bpy.types.Operator):
+    bl_idname = "blenda4d.layer_new"
+    bl_label = "New Layer"
+    bl_description = "Add a layer to the scene (Blender: a new collection); the selected objects move into it"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        col = bpy.data.collections.new("Layer")
+        context.scene.collection.children.link(col)
+        _move_objects(col, list(context.selected_objects))
+        return {"FINISHED"}
+
+
+class BLENDA4D_OT_layer_assign(bpy.types.Operator):
+    bl_idname = "blenda4d.layer_assign"
+    bl_label = "Move Selected Here"
+    bl_description = "Move the selected objects into this layer"
+    bl_options = {"REGISTER", "UNDO"}
+    name: bpy.props.StringProperty(options={"SKIP_SAVE"})
+
+    def execute(self, context):
+        col = bpy.data.collections.get(self.name)
+        if col is None:
+            return {"CANCELLED"}
+        _move_objects(col, list(context.selected_objects))
+        return {"FINISHED"}
+
+
+class BLENDA4D_OT_layer_select(bpy.types.Operator):
+    bl_idname = "blenda4d.layer_select"
+    bl_label = "Select Layer's Objects"
+    bl_description = "Select the objects in this layer"
+    bl_options = {"REGISTER", "UNDO"}
+    name: bpy.props.StringProperty(options={"SKIP_SAVE"})
+
+    def execute(self, context):
+        col = bpy.data.collections.get(self.name)
+        if col is None:
+            return {"CANCELLED"}
+        for ob in context.view_layer.objects:
+            ob.select_set(False)
+        for ob in col.all_objects:
+            if ob.name in context.view_layer.objects:
+                ob.select_set(True)
+        return {"FINISHED"}
+
+
+def draw_layers(layout, context):
+    top = layout.row(align=True)
+    top.alignment = "LEFT"
+    top.operator("blenda4d.layer_new", text="New Layer", icon="ADD")
+    layout.separator(factor=0.4)
+    rows = list(layer_rows(context.view_layer.layer_collection))
+    if not rows:
+        layout.label(text="No layers yet: New Layer groups the selected objects.")
+        return
+    col = layout.column(align=True)
+    for lc, depth in rows:
+        row = col.row(align=True)
+        if depth:
+            row.separator(factor=2.0 * depth)
+        row.prop(lc.collection, "name", text="", emboss=False, icon="OUTLINER_COLLECTION")
+        row.prop(lc, "hide_viewport", text="", icon_only=True, emboss=False)
+        row.prop(lc.collection, "hide_render", text="", icon_only=True, emboss=False)
+        o = row.operator("blenda4d.layer_select", text="", icon="RESTRICT_SELECT_OFF", emboss=False)
+        o.name = lc.collection.name
+        o = row.operator("blenda4d.layer_assign", text="", icon="IMPORT", emboss=False)
+        o.name = lc.collection.name
 
 
 def draw_variations(layout, context):
@@ -1134,10 +1394,10 @@ class BLENDA4D_PT_assets(roles.RolePanel, bpy.types.Panel):
             b.prop_enum(wm, "b4d_ab_tab", tab, text=label, icon=icon)
 
 
-classes = (BLENDA4D_OT_om_look_through, BLENDA4D_OT_size_step, BLENDA4D_OT_om_delete, BLENDA4D_OT_om_solo, BLENDA4D_OT_om_scroll_active, BLENDA4D_OT_om_select, BLENDA4D_OT_om_drag, BLENDA4D_OT_om_rename, BLENDA4D_OT_om_fold, BLENDA4D_OT_om_expand, BLENDA4D_OT_group, BLENDA4D_OT_new_material,
+classes = (BLENDA4D_OT_am_tab, BLENDA4D_OT_layer_new, BLENDA4D_OT_layer_assign, BLENDA4D_OT_layer_select, BLENDA4D_OT_om_look_through, BLENDA4D_OT_size_step, BLENDA4D_OT_om_delete, BLENDA4D_OT_om_solo, BLENDA4D_OT_om_scroll_active, BLENDA4D_OT_om_select, BLENDA4D_OT_om_drag, BLENDA4D_OT_om_rename, BLENDA4D_OT_om_fold, BLENDA4D_OT_om_expand, BLENDA4D_OT_group, BLENDA4D_OT_new_material,
            BLENDA4D_OT_mat_pick, BLENDA4D_OT_mat_tag, *OM_MENUS, *AM_MENUS, *MM_MENUS, *AB_MENUS,
            *(menus.make_more(m) for m in (OM_MENUS, AM_MENUS, MM_MENUS)),
-           BLENDA4D_PT_objects, BLENDA4D_PT_om_bar, BLENDA4D_PT_om_head, BLENDA4D_PT_attributes, BLENDA4D_PT_materials, BLENDA4D_PT_assets)
+           BLENDA4D_PT_objects, BLENDA4D_PT_om_bar, BLENDA4D_PT_attributes, BLENDA4D_PT_materials, BLENDA4D_PT_assets)
 
 
 def _vis_get(attr):
@@ -1158,9 +1418,32 @@ def _enabled_set(self, v):
     self.hide_render = not v
 
 
+_last_active = [None]
+
+
+@bpy.app.handlers.persistent
+def _object_page_on_select(*_args):
+    """Selecting another object puts the Attribute Manager on its Object page (the page stays as the user left it
+    while the same object stays selected)."""
+    try:
+        ob = bpy.context.view_layer.objects.active
+        name = ob.name_full if ob is not None else None
+        if name == _last_active[0]:
+            return
+        _last_active[0] = name
+        wm = bpy.context.window_manager
+        if ob is not None and wm.b4d_am_tab != "OBJECT":
+            wm.b4d_am_tab = "OBJECT"
+    except (AttributeError, RuntimeError, ReferenceError):
+        pass
+
+
 def register():
     for c in classes:
         bpy.utils.register_class(c)
+    _last_active[0] = None
+    if _object_page_on_select not in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.append(_object_page_on_select)
     O, W = bpy.types.Object, bpy.types.WindowManager
     vis = [("DEFAULT", "Default", "Shown as usual"), ("ON", "On", "Shown"), ("OFF", "Off", "Hidden")]
     O.b4d_om_closed = bpy.props.BoolProperty(description='Whether the objects under this one are folded away in the Object Manager', default=False)
@@ -1174,7 +1457,9 @@ def register():
                                             default=0.0, min=0.0, max=100.0, subtype="PERCENTAGE", precision=0,
                                             update=_om_zoom)
     W.b4d_am_tab = bpy.props.EnumProperty(description='The page of settings the Attribute Manager shows', items=_tab_items, name="Page")
-    W.b4d_right_tab = bpy.props.EnumProperty(description='Show the Attribute Manager or the Variations', items=[("ATTRIBUTES", "Attributes", "The selected object's, tag's or material's settings"),
+    W.b4d_om_tab = bpy.props.EnumProperty(description='The Object Manager', items=[("OBJECTS", "Objects", MANAGER_TIPS["Objects"])])
+    W.b4d_right_tab = bpy.props.EnumProperty(description='Show the Attribute Manager, the Layers or the Variations', items=[("ATTRIBUTES", "Attributes", "The selected object's, tag's or material's settings"),
+                                                ("LAYERS", "Layers", "The scene's layers: show, hide and select the objects in each"),
                                                 ("VARIATIONS", "Variations", "Versions of the scene to switch between")])
     W.b4d_material = bpy.props.StringProperty(description='The material selected in the Material Manager', )
     W.b4d_am_subject = bpy.props.StringProperty(description='What the Attribute Manager shows besides the object: a tag or a material', )      # what the Attribute Manager shows besides the object (a tag)
@@ -1234,7 +1519,13 @@ def _draw_rows():
                                  indices=[(0, 1, 2), (0, 2, 3)])
         shader.uniform_float("color", col)
         batch.draw(shader)
+    share, _w = _name_column(context, region, rows)       # the separator between the names and the tags
+    x = share * region.width + DIVIDER_MARGIN * context.preferences.system.ui_scale
+    top = region.view2d.view_to_region(0, -rows_top() * h, clip=False)[1]
+    batch = batch_for_shader(shader, "TRIS", {"pos": [(x, 0), (x + 2, 0), (x + 2, top), (x, top)]}, indices=[(0, 1, 2), (0, 2, 3)])
     gpu.state.blend_set("NONE")
+    shader.uniform_float("color", DIVIDER_GREY)
+    batch.draw(shader)
 
 
 def _add_keymap():
@@ -1252,6 +1543,8 @@ def _add_keymap():
 
 
 def unregister():
+    if _object_page_on_select in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.remove(_object_page_on_select)
     for h in _draw:
         bpy.types.SpaceProperties.draw_handler_remove(h, "WINDOW")
     _draw.clear()
@@ -1264,7 +1557,7 @@ def unregister():
     O, W = bpy.types.Object, bpy.types.WindowManager
     for n in ("b4d_om_closed", "b4d_enabled", "b4d_vis_editor", "b4d_vis_render"):
         delattr(O, n)
-    for n in ("b4d_om_search", "b4d_om_drop", "b4d_om_zoom", "b4d_am_tab", "b4d_right_tab", "b4d_material", "b4d_ab_tab", "b4d_ab_search", "b4d_am_subject"):
+    for n in ("b4d_om_search", "b4d_om_drop", "b4d_om_zoom", "b4d_am_tab", "b4d_om_tab", "b4d_right_tab", "b4d_material", "b4d_ab_tab", "b4d_ab_search", "b4d_am_subject"):
         delattr(W, n)
     for c in reversed(classes):
         bpy.utils.unregister_class(c)
