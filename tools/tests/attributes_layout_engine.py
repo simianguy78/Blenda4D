@@ -278,6 +278,32 @@ def test_layers(cube):
     bpy.data.objects.remove(other)
 
 
+def test_camera_marker():
+    """The scene's active camera is marked in its Object Manager row; any other camera keeps the plain camera icon."""
+    scene = bpy.context.scene
+    cam = bpy.data.objects.get("Camera")
+    if cam is None or cam.type != "CAMERA":
+        cam = bpy.data.objects.new("Camera", bpy.data.cameras.new("Camera"))
+        scene.collection.objects.link(cam)
+    other = bpy.data.objects.new("Camera Two", bpy.data.cameras.new("Camera Two"))
+    scene.collection.objects.link(other)
+
+    def icon(ob):
+        root = Rec()
+        managers.BLENDA4D_PT_objects._row(None, root, ob, 0)
+        return [it[3].get("icon") for _lay, it in leaves(root)
+                if it[1] == "operator" and it[2] and it[2][0] == "blenda4d.om_look_through"]
+
+    scene.camera = cam
+    check(icon(cam) == [managers.ACTIVE_CAMERA_ICON], f"the active camera's row is marked ({icon(cam)})")
+    check(icon(other) == ["VIEW_CAMERA_UNSELECTED"], f"another camera's row keeps the plain icon ({icon(other)})")
+    scene.camera = other
+    check(icon(cam) == ["VIEW_CAMERA_UNSELECTED"] and icon(other) == [managers.ACTIVE_CAMERA_ICON],
+          "the marker follows the scene's active camera")
+    scene.camera = cam
+    bpy.data.objects.remove(other)
+
+
 def test_every_kind():
     """Every kind's every page draws, and every setting on it is a row."""
     for kind, k in sorted(kinds.KINDS.items()):
@@ -323,6 +349,7 @@ try:
     test_tabs(cube)
     test_object_page_on_select(cube)
     test_layers(cube)
+    test_camera_marker()
     test_every_kind()
     switch._unregister_mode()
 except Exception:

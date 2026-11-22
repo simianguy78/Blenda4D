@@ -543,10 +543,11 @@ def _name_column(context, region, rows):
     style = context.preferences.ui_styles[0].widget
     blf.size(0, style.points * context.preferences.system.ui_scale)
     widest = max((h * (2.4 + 0.8 * d) + blf.dimensions(0, ob.name)[0] for ob, d in rows), default=h * 3)
-    left = widest + STATUS_ICONS * h + 0.8 * h
+    left = widest + STATUS_ICONS * h + 1.8 * h          # a little room so the widest name is not cut short
     return max(0.2, min(0.8, left / max(width, 1))), width
 
 
+ACTIVE_CAMERA_ICON = "SNAP_FACE_CENTER"      # a square with a dot in the middle: the scene's active camera
 STATUS_ICONS = 3            # the two dots and the check
 DIVIDER_GREY = (0.12, 0.12, 0.12, 1.0)
 DIVIDER_MARGIN = -4         # UI px (times the UI scale): puts the separator midway between the check column and the tags
@@ -647,7 +648,7 @@ class BLENDA4D_PT_objects(roles.RolePanel, bpy.types.Panel):
         right.separator(factor=0.5)
         if ob.type == "CAMERA":                            # the camera's view switch: filled while looking through it
             right.operator("blenda4d.om_look_through", text="", emboss=False,
-                           icon="VIEW_CAMERA" if looking_through(bpy.context, ob) else "VIEW_CAMERA_UNSELECTED").name = ob.name
+                           icon=ACTIVE_CAMERA_ICON if bpy.context.scene.camera == ob else "VIEW_CAMERA_UNSELECTED").name = ob.name
         for icon, mat, slot in _tags(ob):
             if mat is not None and OM_TAG_BUTTON:
                 OM_TAG_BUTTON[0](right, ob, slot, mat)
