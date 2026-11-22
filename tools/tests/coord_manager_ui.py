@@ -14,6 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ns = runpy.run_path(os.path.join(HERE, "..", "try_ui.py"))
 PLAN, shot, select = ns["PLAN"], ns["shot"], ns["select"]
 FAILS = []
+COORDS_ROWS_PX = 102          # UI units the header row and the three rows need (measured at 2x: 201 px)
 
 
 def win():
@@ -49,6 +50,9 @@ def placed(tag):
             t = tl[0]
             check(abs(a.y - t.y) <= 3 and abs(a.height - t.height) <= 3, f"{tag}: level with the timeline "
                   f"(strip y{a.y} h{a.height}, timeline y{t.y} h{t.height})")
+        from blenda4d import build
+        need = build.px(COORDS_ROWS_PX)
+        check(a.height >= need, f"{tag}: tall enough for the header row and X, Y, Z (h{a.height}, needs {need})")
         am = roles.areas(win().screen, "ATTRIBUTES")
         check(len(am) == 1, f"{tag}: one Attribute Manager")
         if am:
