@@ -65,6 +65,9 @@ own file under `blenda4d/` and plugs in through `kinds.py`, so most items touch 
 - **Material editing**: a simple page for editing any material, with a shader switch.
 - **Object Manager**: bookmarks, layers, search filters, a column divider for tags.
 - Four views: remember the hidden views across sessions.
+- **Coordinate Manager** (`coord_manager.py`): the strip under the Attribute Manager edits the active object only.
+  Still to come: editing all selected objects at once (with mixed values), points and polygons in edit mode,
+  keyframing from its fields, and objects that turn by quaternion or axis-angle (its rotation column uses Euler).
 - Keymap: more shortcuts, including keys for the managers.
 
 ## Everyday safety

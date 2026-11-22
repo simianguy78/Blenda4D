@@ -5,7 +5,7 @@ Areas are made with area_split / area_close (which work without window focus), o
 area's size only updates on the next event loop:
   document tabs (full width, top) | managers column (right, full height: Objects over Attributes)
   command palette (top, left of the managers) | modes column (left) | create column (left of the managers)
-  timeline (bottom, under the viewport) | optional Material Manager column (between viewport and create column)
+  timeline (bottom, under the viewport) | Coordinate Manager (under Attributes, level with the timeline) | optional Material Manager column (between viewport and create column)
   | optional Asset Browser column (left of the viewport)."""
 import bpy
 
@@ -188,9 +188,67 @@ COLUMNS = {"MATERIALS": (add_materials, "MM_BAR"), "ASSETS": (add_assets, "AB_BA
 CORE = ("DOC_TABS", "PALETTE", "MODES", "OBJECTS", "ATTRIBUTES", "OM_BAR", "OM_HEAD")
 
 
+_coords_shown = [True]       # used when the add-on's preferences cannot be read (run from a checkout in tests)
+
+
+def coords_shown():
+    try:
+        from . import settings
+        return settings.get().coords
+    except (KeyError, AttributeError):
+        return _coords_shown[0]
+
+
+def set_coords_shown(on):
+    _coords_shown[0] = on
+    try:
+        from . import settings
+        settings.get().coords = on
+    except (KeyError, AttributeError):
+        pass
+
+
+def coords_strip():
+    """The Coordinate Manager strip is part of the layout while its module (coord_manager.py) is loaded and the
+    timeline's axes button has not hidden it."""
+    return "COORDS" in roles.ROLE_FLAGS and coords_shown()
+
+
+def to_top(window, area):
+    """Scroll an area's panel back to its top (a split that made it shorter leaves it scrolled part way down)."""
+    try:
+        with _ov(window, area):
+            bpy.ops.view2d.scroll_up(deltay=100000)
+    except RuntimeError:
+        pass
+
+
+def coords_steps(window, on):
+    """Show or hide the Coordinate Manager under the Attribute Manager, leaving every other area where it is."""
+    screen = window.screen
+    if on:
+        attrs = roles.areas(screen, "ATTRIBUTES")
+        if attrs and not roles.areas(screen, "COORDS"):
+            tl = next((a for a in screen.areas if a.type == "DOPESHEET_EDITOR"), None)
+            height = tl.height if tl is not None else px(TIMELINE_PX) + 26
+            cm = yield from split(window, attrs[0], "HORIZONTAL", height + EDGE, "BOTTOM")
+            yield from make_role(window, cm, "COORDS")
+            for a in roles.areas(screen, "ATTRIBUTES"):
+                to_top(window, a)
+    else:
+        for a in roles.areas(screen, "COORDS"):           # its room goes back to the Attribute Manager above it
+            with _ov(window, a):
+                bpy.ops.screen.area_close()
+        yield
+    for a in screen.areas:
+        a.tag_redraw()
+
+
 def intact(screen):
     """The Standard layout is all there (each strip once, a viewport and the timeline): nothing to rebuild."""
     if any(len(roles.areas(screen, r)) != 1 for r in CORE):
+        return False
+    if "COORDS" in roles.ROLE_FLAGS and len(roles.areas(screen, "COORDS")) != (1 if coords_strip() else 0):
         return False
     if not any(a.type == "VIEW_3D" for a in screen.areas) or not any(a.type == "DOPESHEET_EDITOR" for a in screen.areas):
         return False
@@ -258,6 +316,12 @@ def steps(window, materials=False, assets=False):
     objs = sorted(roles.areas(screen, "OBJECTS"), key=lambda a: a.y)
     if len(objs) > 1:                                      # the split can hand back the other half
         yield from make_role(window, objs[0], "ATTRIBUTES")
+    attrs = roles.areas(screen, "ATTRIBUTES")
+    if coords_strip() and attrs:                           # the Coordinate Manager: under the Attribute Manager, as
+        cm = yield from split(window, attrs[0], "HORIZONTAL", px(TIMELINE_PX) + hdr + EDGE, "BOTTOM")   # tall as
+        yield from make_role(window, cm, "COORDS")         # the timeline, so the two line up along the bottom
+        for a in roles.areas(screen, "ATTRIBUTES"):
+            to_top(window, a)
     objs = sorted(roles.areas(screen, "OBJECTS"), key=lambda a: a.y)
     if objs:                                               # the Object Manager's bottom strip: its Size slider
         om_bar = yield from split(window, objs[-1], "HORIZONTAL", px(MM_BAR_PX) + EDGE, "BOTTOM")
