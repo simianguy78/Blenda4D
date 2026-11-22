@@ -68,11 +68,12 @@ def stretched(old, new):
     return [k for k in old if k in new and abs(new[k] - old[k]) > TOLERANCE]
 
 
-def fit(window):
-    """Build the layout again at its exact sizes. Returns True when a build was started."""
+def fit(window, done=None):
+    """Build the layout again at its exact sizes (calling done() when it is built). Returns True when a build was
+    started."""
     if build.busy() or not build.intact(window.screen):
         return False
-    build.rebuild(window, force=True)
+    build.rebuild(window, done=done, force=True)
     return True
 
 
@@ -87,6 +88,24 @@ def _blenda_windows():
 SETTLE = 1.0                  # seconds a window must keep its size before its strips are put back
 _state = {}                   # window pointer -> {"size", "since", "base"}: size now, when it last changed, strip
 #                               sizes measured while the window last kept its size
+
+
+SETTLED_AFTER = 0.75          # seconds after a build before its strip sizes are taken as the ones to keep
+
+
+def _fitted(window, st):
+    """The layout was just built: its strips (measured once Blender has laid them out, if the window kept its size
+    meanwhile) are the sizes to keep, so a resize that starts right afterwards is compared with them."""
+    size = (window.width, window.height)
+
+    def measure():
+        try:
+            if (window.width, window.height) == size and build.intact(window.screen) and not build.busy():
+                st["base"] = sizes(window)
+        except (ReferenceError, RuntimeError, AttributeError):
+            pass
+        return None
+    bpy.app.timers.register(measure, first_interval=SETTLED_AFTER)
 
 
 def _tick():
@@ -110,8 +129,8 @@ def _tick():
             if now_t - st["since"] < SETTLE:
                 continue
             if st["base"] is not None and stretched(st["base"], now):
-                st["base"] = None                             # measured again after the build
-                fit(w)
+                st["base"] = None
+                fit(w, lambda w=w, st=st: _fitted(w, st))
             else:
                 st["base"] = now                              # settled and as before: follow edges the user dragged
     except (ReferenceError, RuntimeError, AttributeError) as ex:
